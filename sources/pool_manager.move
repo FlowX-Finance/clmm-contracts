@@ -49,8 +49,10 @@ module flowx_clmm::pool_manager {
     public fun create_pool<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
+        versioned: &mut Versioned,
         ctx: &mut TxContext
     ) {
+        versioned::check_version_and_upgrade(versioned);
         let tick_spacing = *table::borrow(&self.fee_amount_tick_spacing, fee_rate);
         if (is_ordered<X, Y>()) {
             let key = PoolDfKey {

@@ -2,6 +2,7 @@ module flowx_clmm::versioned {
     use sui::object::{Self, UID};
 
     friend flowx_clmm::pool;
+    friend flowx_clmm::pool_manager;
 
     const VERSION: u64 = 1;
 
