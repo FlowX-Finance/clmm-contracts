@@ -150,7 +150,9 @@ module flowx_clmm::tick {
         let liquidity_gross_before = tick_info.liquidity_gross;
         let liquidity_gross_after = liquidity_math::add_delta(liquidity_gross_before, liquidity_delta);
 
-        assert!(liquidity_gross_after <= max_liquidity, E_LIQUIDITY_OVERFLOW);
+        if (liquidity_gross_after > max_liquidity) {
+            abort E_LIQUIDITY_OVERFLOW
+        };
 
         let flipped = (liquidity_gross_after == 0) != (liquidity_gross_before == 0);
 

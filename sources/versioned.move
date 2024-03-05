@@ -3,6 +3,7 @@ module flowx_clmm::versioned {
 
     friend flowx_clmm::pool;
     friend flowx_clmm::pool_manager;
+    friend flowx_clmm::position_mamanger;
 
     const VERSION: u64 = 1;
 

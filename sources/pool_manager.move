@@ -1,23 +1,27 @@
 module flowx_clmm::pool_manager {
     use std::type_name::{Self, TypeName};
     use std::ascii;
-    use sui::object::{Self, UID};
+    use sui::object::{Self, UID, ID};
     use sui::table::{Self, Table};
     use sui::tx_context::{Self, TxContext};
     use sui::dynamic_object_field::{Self as dof};
     use sui::transfer;
     use sui::event;
+    use sui::clock::Clock;
 
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::comparator;
-    use flowx_clmm::pool;
+    use flowx_clmm::pool::{Self, Pool};
     use flowx_clmm::versioned::{Self, Versioned};
+    use flowx_clmm::position::{Self, Position};
+    use flowx_clmm::utils;
 
     const E_IDENTICAL_COIN: u64 = 0;
     const E_POOL_ALREADY_CREATED: u64 = 1;
     const E_INVALID_FEE_RATE: u64 = 2;
     const E_TICK_SPACING_OVERFLOW: u64 = 3;
     const E_FEE_RATE_ALREADY_ENABLED: u64 = 4;
+    const E_POOL_NOT_CREATED: u64 = 5;
 
     struct PoolDfKey has copy, drop, store {
         coin_type_x: TypeName,
@@ -31,19 +35,66 @@ module flowx_clmm::pool_manager {
         num_pools: u64
     }
 
-    struct FeeRateEnabled has copy, drop, store {
+    struct PoolCreated has copy, drop, store {
+        sender: address,
+        pool_id: ID,
+        coin_type_x: TypeName,
+        coin_type_y: TypeName,
         fee_rate: u64,
         tick_spacing: u32
     }
 
-    public fun is_ordered<X, Y>(): bool {
-        let x_name = type_name::into_string(type_name::get<X>());
-        let y_name = type_name::into_string(type_name::get<Y>());
+    struct FeeRateEnabled has copy, drop, store {
+        sender: address,
+        fee_rate: u64,
+        tick_spacing: u32
+    }
+    
+    fun pool_key<X, Y>(fee_rate: u64): PoolDfKey {
+        PoolDfKey {
+            coin_type_x: type_name::get<X>(),
+            coin_type_y: type_name::get<Y>(),
+            fee_rate
+        }
+    }
 
-        let result = comparator::compare_u8_vector(ascii::into_bytes(x_name), ascii::into_bytes(y_name));
-        assert!(!comparator::is_equal(&result), E_IDENTICAL_COIN);
-        
-        comparator::is_smaller_than(&result)
+    public fun check_exists<X, Y>(self: &PoolRegistry, fee_rate: u64) {
+        if (!dof::exists_(&self.id, pool_key<X, Y>(fee_rate))) {
+            abort E_POOL_NOT_CREATED
+        };
+    }
+
+    public fun borrow_pool<X, Y>(self: &PoolRegistry, fee_rate: u64): &Pool<X, Y> {
+        check_exists<X, Y>(self, fee_rate);
+        dof::borrow<PoolDfKey, Pool<X, Y>>(&self.id, pool_key<X, Y>(fee_rate))
+    }
+
+    public fun borrow_mut_pool<X, Y>(self: &mut PoolRegistry, fee_rate: u64): &mut Pool<X, Y> {
+        check_exists<X, Y>(self, fee_rate);
+        dof::borrow_mut<PoolDfKey, Pool<X, Y>>(&mut self.id, pool_key<X, Y>(fee_rate))
+    }
+
+    fun create_pool_<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        ctx: &mut TxContext
+    ) {
+        let tick_spacing = *table::borrow(&self.fee_amount_tick_spacing, fee_rate);
+        let key = pool_key<X, Y>(fee_rate);
+        if (dof::exists_(&self.id, key)) {
+            abort E_POOL_ALREADY_CREATED
+        };
+        let pool = pool::create<X, Y>(fee_rate, tick_spacing, ctx);
+        event::emit(PoolCreated {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(&pool),
+            coin_type_x: pool::coin_type_x(&pool),
+            coin_type_y: pool::coin_type_y(&pool),
+            fee_rate,
+            tick_spacing
+        });
+        dof::add(&mut self.id, key, pool);
+        self.num_pools = self.num_pools + 1;
     }
 
     public fun create_pool<X, Y>(
@@ -53,39 +104,22 @@ module flowx_clmm::pool_manager {
         ctx: &mut TxContext
     ) {
         versioned::check_version_and_upgrade(versioned);
-        let tick_spacing = *table::borrow(&self.fee_amount_tick_spacing, fee_rate);
-        if (is_ordered<X, Y>()) {
-            let key = PoolDfKey {
-                coin_type_x: type_name::get<X>(),
-                coin_type_y: type_name::get<Y>(),
-                fee_rate
-            };
-            if (dof::exists_(&self.id, key)) {
-                abort E_POOL_ALREADY_CREATED
-            };
-            let pool = pool::create<X, Y>(fee_rate, tick_spacing, ctx);
-            dof::add(&mut self.id, key, pool);
+        if (utils::is_ordered<X, Y>()) {
+            create_pool_<X, Y>(self, fee_rate, ctx);
         } else {
-            let key = PoolDfKey {
-                coin_type_x: type_name::get<Y>(),
-                coin_type_y: type_name::get<X>(),
-                fee_rate
-            };
-            if (dof::exists_(&self.id, key)) {
-                abort E_POOL_ALREADY_CREATED
-            };
-            let pool = pool::create<Y, X>(fee_rate, tick_spacing, ctx);
-            dof::add(&mut self.id, key, pool);
+            create_pool_<Y, X>(self, fee_rate, ctx);
         };
-        self.num_pools = self.num_pools + 1;
     }
 
     public fun enable_fee_rate(
         _: &AdminCap,
         self: &mut PoolRegistry,
         fee_rate: u64,
-        tick_spacing: u32
+        tick_spacing: u32,
+        versioned: &mut Versioned,
+        ctx: &TxContext
     ) {
+        versioned::check_version_and_upgrade(versioned);
         if (fee_rate >= 1_000_000) {
             abort E_INVALID_FEE_RATE
         };
@@ -100,6 +134,7 @@ module flowx_clmm::pool_manager {
 
         table::add(&mut self.fee_amount_tick_spacing, fee_rate, tick_spacing);
         event::emit(FeeRateEnabled {
+            sender: tx_context::sender(ctx),
             fee_rate,
             tick_spacing
         });

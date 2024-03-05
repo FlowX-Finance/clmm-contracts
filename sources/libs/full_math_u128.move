@@ -28,4 +28,22 @@ module flowx_clmm::full_math_u128 {
     public fun full_mul(num1: u128, num2: u128): u256 {
         (num1 as u256) * (num2 as u256)
     }
+
+    /// Return the larger of `x` and `y`
+    public fun max(x: u128, y: u128): u128 {
+        if (x > y) {
+            x
+        } else {
+            y
+        }
+    }
+
+    /// Return the smaller of `x` and `y`
+    public fun min(x: u128, y: u128): u128 {
+        if (x < y) {
+            x
+        } else {
+            y
+        }
+    }
 }

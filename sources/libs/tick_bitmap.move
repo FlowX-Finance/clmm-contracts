@@ -67,9 +67,9 @@ module flowx_clmm::tick_bitmap {
             let mask = (1u256 << bit_pos) - 1 + (1u256 << bit_pos);
             let masked = try_get_tick_word(self, word_pos) & mask;
 
-            let initialized_ = masked != 0;
+            let _initialized = masked != 0;
 
-            let next_ = if (initialized_) {
+            let _next = if (_initialized) {
                 i32::mul(
                     i32::sub(
                         compressed,
@@ -87,15 +87,15 @@ module flowx_clmm::tick_bitmap {
                 )
             };
 
-            (next_, initialized_)
+            (_next, _initialized)
         } else {
             let (word_pos, bit_pos) = position(i32::add(compressed, i32::from(1)));
             let mask = ((1u256 << bit_pos) - 1) ^ constants::get_max_u256();
             let masked = try_get_tick_word(self, word_pos) & mask;
 
-            let initialized_ = masked != 0;
+            let _initialized = masked != 0;
             
-            let next_ = if (initialized_) {
+            let _next = if (_initialized) {
                 i32::mul(
                     i32::add(
                         i32::add(compressed, i32::from(1)),
@@ -119,7 +119,7 @@ module flowx_clmm::tick_bitmap {
                 )
             };
 
-            (next_, initialized_)
+            (_next, _initialized)
         };
 
         (next, initialized)
