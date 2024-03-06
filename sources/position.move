@@ -23,6 +23,7 @@ module flowx_clmm::position {
     struct Position has key, store {
         id: UID,
         pool_id: ID,
+        fee_rate: u64,
         coin_type_x: TypeName,
 	    coin_type_y: TypeName,
         tick_lower_index: I32,
@@ -46,6 +47,10 @@ module flowx_clmm::position {
         transfer::public_transfer(publisher, tx_context::sender(ctx));
     }
 
+    public fun pool_id(self: &Position): ID { self.pool_id }
+
+    public fun fee_rate(self: &Position): u64 { self.fee_rate }
+
     public fun liquidity(self: &Position): u128 { self.liquidity }
 
     public fun tick_lower_index(self: &Position): I32 { self.tick_lower_index }
@@ -58,6 +63,7 @@ module flowx_clmm::position {
 
     public(friend) fun open(
         pool_id: ID,
+        fee_rate: u64,
         coin_type_x: TypeName,
 	    coin_type_y: TypeName,
         tick_lower_index: I32,
@@ -67,6 +73,7 @@ module flowx_clmm::position {
         Position {
             id: object::new(ctx),
             pool_id,
+            fee_rate,
             coin_type_x,
             coin_type_y,
             tick_lower_index,
@@ -81,8 +88,8 @@ module flowx_clmm::position {
 
     public(friend) fun close(position: Position) {
         let Position { 
-            id, pool_id: _, coin_type_x: _, coin_type_y: _, tick_lower_index: _, tick_upper_index: _, liquidity: _,
-            fee_growth_inside_x_last: _, fee_growth_inside_y_last: _, coins_owed_x: _, coins_owed_y: _
+            id, pool_id: _, fee_rate: _, coin_type_x: _, coin_type_y: _, tick_lower_index: _, tick_upper_index: _,
+            liquidity: _, fee_growth_inside_x_last: _, fee_growth_inside_y_last: _, coins_owed_x: _, coins_owed_y: _
         } = position;
         object::delete(id);
     }

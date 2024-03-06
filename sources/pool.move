@@ -167,6 +167,8 @@ module flowx_clmm::pool {
         )
     }
 
+    public fun swap_fee_rate<X, Y>(self: &Pool<X, Y>): u64 { self.swap_fee_rate }
+
     public fun receipt_debts(receipt: &Receipt): (u64, u64) { (receipt.amount_x_debt, receipt.amount_y_debt) }
 
     public(friend) fun create<X, Y>(
@@ -228,7 +230,7 @@ module flowx_clmm::pool {
     ): (u64, u64) {
         versioned::check_version_and_upgrade(versioned);
         check_lock(self);
-        check_pool_match(self, object::id(position));
+        check_pool_match(self, position::pool_id(position));
 
         self.locked = true;
         let add = i128::gte(liquidity_delta, i128::zero());
@@ -610,10 +612,7 @@ module flowx_clmm::pool {
     ): (Balance<X>, Balance<Y>) {
         versioned::check_version_and_upgrade(versioned);
         check_lock(self);
-
-        if (object::id(self) != object::id(position)) {
-            abort E_POOL_ID_MISMATCH
-        };
+        check_pool_match(self, position::pool_id(position));
 
         self.locked = true;
         let amount_x = if (amount_x_requested > position::coins_owed_x(position)) {
