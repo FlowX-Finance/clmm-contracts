@@ -27,17 +27,11 @@ module flowx_clmm::pool {
     const E_POOL_ID_MISMATCH: u64 = 0;
     const E_INSUFFICIENT_INPUT_AMOUNT: u64 = 1;
     const E_POOL_ALREADY_INITIALIZED: u64 = 2;
-    const E_INVALID_INPUT: u64 = 3;
-    const E_POOL_ALREADY_LOCKED: u64 = 4;
-    const E_PRICE_LIMIT_ALREADY_EXCEEDED: u64 = 5;
-    const E_PRICE_LIMIT_OUT_OF_BOUNDS: u64 = 6;
-    const E_INSUFFICIENT_LIQUIDITY: u64 = 7;
-    const E_INVALID_PROTOCOL_FEE_RATE: u64 = 8;
-
-    struct ProtocolFees has store {
-        coin_x: u128,
-        coin_y: u128 
-    }
+    const E_POOL_ALREADY_LOCKED: u64 = 3;
+    const E_PRICE_LIMIT_ALREADY_EXCEEDED: u64 = 4;
+    const E_PRICE_LIMIT_OUT_OF_BOUNDS: u64 = 5;
+    const E_INSUFFICIENT_LIQUIDITY: u64 = 6;
+    const E_INVALID_PROTOCOL_FEE_RATE: u64 = 7;
 
     struct ReserveDfKey<phantom T> has copy, drop, store {}
 
@@ -481,8 +475,7 @@ module flowx_clmm::pool {
         receipt: Receipt,
         payment_x: Balance<X>,
         payment_y: Balance<Y>,
-        versioned: &mut Versioned,
-        ctx: &TxContext
+        versioned: &mut Versioned
     ) {
         versioned::check_version_and_upgrade(versioned);
         check_pool_match(self, receipt.pool_id);
@@ -497,11 +490,7 @@ module flowx_clmm::pool {
             (balance_y_before + amount_y_debt > balance_y_after)
         ) {
             abort E_INSUFFICIENT_INPUT_AMOUNT
-        };
-
-        // sub is safe because we know balanceAfter is gt balanceBefore by at least fee
-        let paid_x = balance_y_after - balance_x_before;
-        let paid_y = balance_y_after - balance_y_before;
+        };        
         self.locked = false;
     }
 
@@ -557,8 +546,7 @@ module flowx_clmm::pool {
         self: &mut Pool<X, Y>,
         receipt: Receipt,
         payment_x: Balance<X>,
-        payment_y: Balance<Y>,
-        ctx: &TxContext
+        payment_y: Balance<Y>
     ) {
         check_pool_match(self, receipt.pool_id);
         

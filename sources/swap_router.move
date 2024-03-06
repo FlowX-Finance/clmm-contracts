@@ -2,12 +2,12 @@ module flowx_clmm::swap_router {
     use sui::tx_context::{Self, TxContext};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
-    use sui::clock::{Self, Clock};
+    use sui::clock::Clock;
     use sui::transfer;
 
     use flowx_clmm::pool_manager::{Self, PoolRegistry};
     use flowx_clmm::tick_math;
-    use flowx_clmm::pool::{Self, Pool, Receipt};
+    use flowx_clmm::pool::{Self, Pool};
     use flowx_clmm::versioned::Versioned;
     use flowx_clmm::utils;
 
@@ -16,57 +16,34 @@ module flowx_clmm::swap_router {
 
     public fun swap_exact_x_to_y<X, Y>(
         pool: &mut Pool<X, Y>,
-        amount_x_in: u64,
+        coin_in: Coin<X>,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
-        ctx: &mut TxContext
-    ): (Balance<Y>, Receipt) {
-        let _sqrt_price_limit = if (sqrt_price_limit == 0) {
-            tick_math::min_sqrt_price() + 1
-        } else {
-            sqrt_price_limit
-        };
-
+        ctx: &TxContext
+    ): Balance<Y> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool,
-            true,
-            true,
-            amount_x_in,
-            _sqrt_price_limit,
-            versioned,
-            ctx
+            pool, true, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, true), versioned, ctx
         );
-        
         balance::destroy_zero(x_out);
+        pool::pay(pool, receipt, coin::into_balance(coin_in), balance::zero(), versioned);
 
-        (y_out, receipt)
+        y_out
     }
 
     public fun swap_exact_y_to_x<X, Y>(
         pool: &mut Pool<X, Y>,
-        amount_y_in: u64,
+        coin_in: Coin<Y>,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
-        ctx: &mut TxContext
-    ): (Balance<X>, Receipt) {
-        let _sqrt_price_limit = if (sqrt_price_limit == 0) {
-            tick_math::max_sqrt_price() - 1
-        } else {
-            sqrt_price_limit
-        };
-
+        ctx: &TxContext
+    ): Balance<X> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool,
-            true,
-            true,
-            amount_y_in,
-            _sqrt_price_limit,
-            versioned,
-            ctx
+            pool, false, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, false), versioned, ctx
         );
         balance::destroy_zero(y_out);
+        pool::pay(pool, receipt, balance::zero(), coin::into_balance(coin_in), versioned);
 
-        (x_out, receipt)
+        x_out
     }
 
     public fun swap_exact_input<X, Y>(
@@ -81,43 +58,22 @@ module flowx_clmm::swap_router {
         ctx: &mut TxContext
     ): Coin<Y> {
         utils::check_deadline(clock, deadline);
-        let amount_in = coin::value(&coin_in);
         let coin_out = if (utils::is_ordered<X, Y>()) {
-            let pool = pool_manager::borrow_mut_pool<X, Y>(pool_registry, fee);
-            let (coin_out, receipt) = swap_exact_x_to_y<X, Y>(
-                pool,
-                amount_in,
+            swap_exact_x_to_y<X, Y>(
+                pool_manager::borrow_mut_pool<X, Y>(pool_registry, fee),
+                coin_in,
                 sqrt_price_limit,
                 versioned,
                 ctx
-            );
-            pool::pay(
-                pool,
-                receipt,
-                coin::into_balance(coin_in),
-                balance::zero(),
-                versioned,
-                ctx
-            );
-            coin_out
+            )
         } else {
-            let pool = pool_manager::borrow_mut_pool<Y, X>(pool_registry, fee);
-            let (coin_out, receipt) = swap_exact_y_to_x<Y, X>(
-                pool,
-                amount_in,
+            swap_exact_y_to_x<Y, X>(
+                pool_manager::borrow_mut_pool<Y, X>(pool_registry, fee),
+                coin_in,
                 sqrt_price_limit,
                 versioned,
                 ctx
-            );
-            pool::pay(
-                pool,
-                receipt,
-                balance::zero(),
-                coin::into_balance(coin_in),
-                versioned,
-                ctx
-            );
-            coin_out
+            )
         };
         
         if (balance::value<Y>(&coin_out) < amount_out_min) {
@@ -129,64 +85,60 @@ module flowx_clmm::swap_router {
 
     public fun swap_x_to_exact_y<X, Y>(
         pool: &mut Pool<X, Y>,
+        coin_in: Coin<X>,
         amount_y_out: u64,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
         ctx: &mut TxContext
-    ): (Balance<Y>, Receipt) {
-        let _sqrt_price_limit = if (sqrt_price_limit == 0) {
-            tick_math::min_sqrt_price() + 1
-        } else {
-            sqrt_price_limit
+    ): Balance<Y> {
+        let (x_out, y_out, receipt) = pool::swap(
+            pool, true, false, amount_y_out, get_sqrt_price_limit(sqrt_price_limit, true), versioned, ctx
+        );
+        balance::destroy_zero(x_out);
+
+        let (amount_in_required, _) = pool::receipt_debts(&receipt);
+        if (amount_in_required > coin::value(&coin_in)) {
+            abort E_EXCESSIVE_INPUT_AMOUNT
         };
 
-        let (x_out, y_out, receipt) = pool::swap(
-            pool,
-            true,
-            false,
-            amount_y_out,
-            _sqrt_price_limit,
-            versioned,
-            ctx
+        pool::pay(
+            pool, receipt, coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), balance::zero(), versioned
         );
-
-        balance::destroy_zero(x_out);
-        (y_out, receipt)
+        refund(coin_in, tx_context::sender(ctx));
+    
+        y_out
     }
 
     public fun swap_y_to_exact_x<X, Y>(
         pool: &mut Pool<X, Y>,
+        coin_in: Coin<Y>,
         amount_x_out: u64,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
         ctx: &mut TxContext
-    ): (Balance<X>, Receipt) {
-        let _sqrt_price_limit = if (sqrt_price_limit == 0) {
-            tick_math::max_sqrt_price() - 1
-        } else {
-            sqrt_price_limit
+    ): Balance<X> {
+        let (x_out, y_out, receipt) = pool::swap(
+            pool, false, false, amount_x_out, get_sqrt_price_limit(sqrt_price_limit, false), versioned, ctx
+        );
+        balance::destroy_zero(y_out);
+
+        let (_, amount_in_required) = pool::receipt_debts(&receipt);
+        if (amount_in_required > coin::value(&coin_in)) {
+            abort E_EXCESSIVE_INPUT_AMOUNT
         };
 
-        let (x_out, y_out, receipt) = pool::swap(
-            pool,
-            true,
-            false,
-            amount_x_out,
-            _sqrt_price_limit,
-            versioned,
-            ctx
+        pool::pay(
+            pool, receipt, balance::zero(), coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), versioned
         );
+        refund(coin_in, tx_context::sender(ctx));
 
-        balance::destroy_zero(y_out);
-        (x_out, receipt)
+        x_out
     }
 
-    #[lint_allow(self_transfer)]
     public fun swap_exact_output<X, Y>(
         pool_registry: &mut PoolRegistry,
         fee: u64,
         coin_in: Coin<X>,
-        amount_in_max: u64,
         amount_out: u64,
         sqrt_price_limit: u128,
         deadline: u64,
@@ -196,56 +148,50 @@ module flowx_clmm::swap_router {
     ): Coin<Y> {
         utils::check_deadline(clock, deadline);
 
-        let amount_in_max = coin::value(&coin_in);
-        let (coin_out, amount_in_required) = if (utils::is_ordered<X, Y>()) {
-            let pool = pool_manager::borrow_mut_pool<X, Y>(pool_registry, fee);
-            let (coin_out, receipt) = swap_x_to_exact_y<X, Y>(
-                pool,
+        let coin_out = if (utils::is_ordered<X, Y>()) {
+            swap_x_to_exact_y<X, Y>(
+                pool_manager::borrow_mut_pool<X, Y>(pool_registry, fee),
+                coin_in,
                 amount_out,
                 sqrt_price_limit,
                 versioned,
                 ctx
-            );
-            let (amount_in_required, _) = pool::receipt_debts(&receipt);
-            pool::pay(
-                pool,
-                receipt,
-                coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)),
-                balance::zero(),
-                versioned,
-                ctx
-            );
-            (coin_out, amount_in_required)
+            )
         } else {
-            let pool = pool_manager::borrow_mut_pool<Y, X>(pool_registry, fee);
-            let (coin_out, receipt) = swap_y_to_exact_x<Y, X>(
-                pool,
+            swap_y_to_exact_x<Y, X>(
+                pool_manager::borrow_mut_pool<Y, X>(pool_registry, fee),
+                coin_in,
                 amount_out,
                 sqrt_price_limit,
                 versioned,
                 ctx
-            );
-            let (_, amount_in_required) = pool::receipt_debts(&receipt);
-            pool::pay(
-                pool,
-                receipt,
-                balance::zero(),
-                coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)),
-                versioned,
-                ctx
-            );
-            (coin_out, amount_in_required)
+            )
         };
-        
-        if (amount_in_required > amount_in_max) {
-            abort E_EXCESSIVE_INPUT_AMOUNT
-        };
-        if (coin::value(&coin_in) > 0) {
-            transfer::public_transfer(coin_in, tx_context::sender(ctx));
-        } else {
-            coin::destroy_zero(coin_in)
-        };
-        
+
         coin::from_balance(coin_out, ctx)
+    }
+
+    fun get_sqrt_price_limit(sqrt_price_limit: u128, x_for_y: bool): u128 {
+        if (sqrt_price_limit == 0) {
+            if (x_for_y) {
+                tick_math::min_sqrt_price() + 1
+            } else {
+                tick_math::max_sqrt_price() - 1
+            }
+        } else {
+            sqrt_price_limit
+        }
+    }
+
+    #[lint_allow(self_transfer)]
+    fun refund<X>(
+        refunded: Coin<X>,
+        receipt: address
+    ) {
+        if (coin::value(&refunded) > 0) {
+            transfer::public_transfer(refunded, receipt);
+        } else {
+            coin::destroy_zero(refunded)
+        }; 
     }
 }

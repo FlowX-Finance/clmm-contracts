@@ -1,22 +1,16 @@
 module flowx_clmm::pool_manager {
     use std::type_name::{Self, TypeName};
-    use std::ascii;
     use sui::object::{Self, UID, ID};
     use sui::table::{Self, Table};
     use sui::tx_context::{Self, TxContext};
     use sui::dynamic_object_field::{Self as dof};
-    use sui::transfer;
     use sui::event;
-    use sui::clock::Clock;
 
     use flowx_clmm::admin_cap::AdminCap;
-    use flowx_clmm::comparator;
     use flowx_clmm::pool::{Self, Pool};
     use flowx_clmm::versioned::{Self, Versioned};
-    use flowx_clmm::position::{Self, Position};
     use flowx_clmm::utils;
 
-    const E_IDENTICAL_COIN: u64 = 0;
     const E_POOL_ALREADY_CREATED: u64 = 1;
     const E_INVALID_FEE_RATE: u64 = 2;
     const E_TICK_SPACING_OVERFLOW: u64 = 3;

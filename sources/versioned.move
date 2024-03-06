@@ -1,6 +1,9 @@
 module flowx_clmm::versioned {
     use sui::object::{Self, UID};
+    use sui::tx_context::TxContext;
+    use sui::transfer;
 
+    use flowx_clmm::admin_cap::AdminCap;
     friend flowx_clmm::pool;
     friend flowx_clmm::pool_manager;
     friend flowx_clmm::position_mamanger;
@@ -13,6 +16,13 @@ module flowx_clmm::versioned {
     struct Versioned has key, store {
         id: UID,
         version: u64
+    }
+
+    fun init(ctx: &mut TxContext) {
+        transfer::share_object(Versioned {
+            id: object::new(ctx),
+            version: VERSION
+        });
     }
 
     public fun check_version(self: &Versioned) {
@@ -28,8 +38,8 @@ module flowx_clmm::versioned {
         check_version(self);
     }
 
-    // public entry fun upgrade(_: &AdminCap, state: &mut State) {
-    //     assert!(state.version < VERSION, ERROR_NOT_UPGRADED);
-    //     state.version = VERSION;
-    // }
+    public fun upgrade(_: &AdminCap, self: &mut Versioned) {
+        assert!(self.version < VERSION, E_NOT_UPGRADED);
+        self.version = VERSION;
+    }
 }

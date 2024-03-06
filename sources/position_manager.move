@@ -5,14 +5,14 @@ module flowx_clmm::position_mamanger {
     use sui::coin::{Self, Coin};
     use sui::event;
     use sui::transfer;
-    use sui::clock::{Self, Clock};
+    use sui::clock::Clock;
 
     use flowx_clmm::i128;
     use flowx_clmm::tick_math;
     use flowx_clmm::liquidity_math;
     use flowx_clmm::i32::{Self, I32};
     use flowx_clmm::tick;
-    use flowx_clmm::pool::{Self, Pool};
+    use flowx_clmm::pool;
     use flowx_clmm::position::{Self, Position};
     use flowx_clmm::versioned::{Self, Versioned};
     use flowx_clmm::pool_manager::{Self, PoolRegistry};
@@ -105,6 +105,7 @@ module flowx_clmm::position_mamanger {
         versioned: &mut Versioned,
         ctx: &TxContext
     ) {
+        versioned::check_version_and_upgrade(versioned);
         if (
             position::liquidity(&position) != 0 ||
             position::coins_owed_x(&position) != 0 ||
