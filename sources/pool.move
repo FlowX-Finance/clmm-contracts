@@ -1,4 +1,5 @@
 module flowx_clmm::pool {
+    use std::vector;
     use std::type_name::{Self, TypeName};
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
@@ -194,7 +195,10 @@ module flowx_clmm::pool {
             liquidity: 0,
             ticks: table::new(ctx),
             tick_bitmap: table::new(ctx),
-            observation: vector::empty(),
+            observation_index: 0,
+            observation_cardinality: 0,
+            observation_cardinality_next: 0,
+            observations: vector::empty(),
             locked: true
         };
         df::add(&mut pool.id, ReserveDfKey<X> {}, balance::zero<X>());
@@ -215,9 +219,9 @@ module flowx_clmm::pool {
         self.tick_index = tick_index;
         self.sqrt_price = sqrt_price;
 
-        let (cardinality, cardinality_next) = oracle::initialize(clock::timestamp_ms(&clock));
+        let (cardinality, cardinality_next) = oracle::initialize(&mut self.observations, clock::timestamp_ms(clock));
         self.observation_cardinality = cardinality;
-        self.cardinality_next = cardinality_next;
+        self.observation_cardinality_next = cardinality_next;
         self.locked = false;
 
         event::emit(Initialize {
@@ -736,7 +740,7 @@ module flowx_clmm::pool {
             } else if (i32::lt(pool.tick_index, tick_upper_index)) {
                 // current tick is inside the passed range
                 let (observation_index, observation_cardinality) = oracle::write(
-                    &pool.observations,
+                    &mut pool.observations,
                     pool.observation_index,
                     utils::to_seconds(clock::timestamp_ms(clock)),
                     pool.tick_index,

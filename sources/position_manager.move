@@ -144,7 +144,7 @@ module flowx_clmm::position_mamanger {
     ) {
         utils::check_deadline(clock, deadline);
         let (amount_x, amount_y) = if (utils::is_ordered<X, Y>()) {
-            increase_liquidity_<X, Y>(self, position, x_in, y_in, versioned, ctx)
+            increase_liquidity_<X, Y>(self, position, x_in, y_in, versioned, clock, ctx)
         } else {
             let (amount_y, amount_x) = increase_liquidity_<Y, X>(self, position, y_in, x_in, versioned, clock, ctx);
             (amount_x, amount_y)

@@ -6,6 +6,7 @@ module flowx_clmm::pool_manager {
     use sui::dynamic_object_field::{Self as dof};
     use sui::event;
     use sui::transfer;
+    use sui::clock::Clock;
 
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::pool::{Self, Pool};
