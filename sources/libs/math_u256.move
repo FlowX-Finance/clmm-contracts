@@ -44,6 +44,15 @@ module flowx_clmm::math_u256 {
         (MAX_U256 - num1 >= num2)
     }
 
+    public fun overflow_add(num1: u256, num2: u256): u256 {
+        if (!add_check(num1, num2)) {
+            let diff = MAX_U256 - num1;
+            num2 - diff - 1
+        } else {
+            num1 + num2
+        }
+    }
+
     #[test]
     fun test_div_round() {
         div_round(1, 1, true);
@@ -52,5 +61,13 @@ module flowx_clmm::math_u256 {
     #[test]
     fun test_add() {
         1000u256 + 1000u256;
+    }
+
+    #[test]
+    fun test_overflow_add() {
+        assert!(overflow_add(MAX_U256, 1) == 0, 0);
+        assert!(overflow_add(MAX_U256, 100) == 99, 0);
+        assert!(overflow_add(MAX_U256 - 100, 100) == MAX_U256, 0);
+        assert!(overflow_add(MAX_U256 - 200, 100) == MAX_U256 - 100, 0);
     }
 }

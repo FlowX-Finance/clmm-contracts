@@ -39,7 +39,7 @@ module flowx_clmm::position {
         let publisher = package::claim(otw, ctx);
         let display = display::new<Position>(&publisher, ctx);
         display::add(&mut display, utf8(b"name"), utf8(b"Flowx Position's NFT"));
-        display::add(&mut display, utf8(b"description"), utf8(b"An NFT created by Flowx CLMM"));
+        display::add(&mut display, utf8(b"description"), utf8(b"Flowx Position's NFT"));
         display::add(&mut display, utf8(b"image_url"), utf8(b""));
         display::update_version(&mut display);
 

@@ -6,6 +6,7 @@ module flowx_clmm::pool {
     use sui::table::{Self, Table};
     use sui::dynamic_field::{Self as df};
     use sui::event;
+    use sui::clock::{Self, Clock};
     
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::i32::{Self, I32};
@@ -21,6 +22,8 @@ module flowx_clmm::pool {
     use flowx_clmm::constants;
     use flowx_clmm::full_math_u64;
     use flowx_clmm::full_math_u128;
+    use flowx_clmm::oracle::{Self, Observation};
+    use flowx_clmm::utils;
 
     friend flowx_clmm::pool_manager;
 
@@ -43,6 +46,9 @@ module flowx_clmm::pool {
         sqrt_price: u128,
         // the current tick
         tick_index: I32,
+        observation_index: u64,
+        observation_cardinality: u64,
+        observation_cardinality_next: u64,
         // the pool tick spacing
         tick_spacing: u32,
         max_liquidity_per_tick: u128,
@@ -59,6 +65,7 @@ module flowx_clmm::pool {
         liquidity: u128,
         ticks: Table<I32, TickInfo>,
         tick_bitmap: Table<I32, u256>,
+        observations: vector<Observation>,
         locked: bool
     }
 
@@ -187,7 +194,8 @@ module flowx_clmm::pool {
             liquidity: 0,
             ticks: table::new(ctx),
             tick_bitmap: table::new(ctx),
-            locked: false
+            observation: vector::empty(),
+            locked: true
         };
         df::add(&mut pool.id, ReserveDfKey<X> {}, balance::zero<X>());
         df::add(&mut pool.id, ReserveDfKey<Y> {}, balance::zero<Y>());
@@ -196,7 +204,8 @@ module flowx_clmm::pool {
 
     public fun initialize<X, Y>(
         self: &mut Pool<X, Y>,
-        sqrt_price: u128
+        sqrt_price: u128,
+        clock: &Clock
     ) {
         if (self.sqrt_price > 0) {
             abort E_POOL_ALREADY_INITIALIZED
@@ -205,6 +214,11 @@ module flowx_clmm::pool {
         let tick_index = tick_math::get_tick_at_sqrt_price(sqrt_price);
         self.tick_index = tick_index;
         self.sqrt_price = sqrt_price;
+
+        let (cardinality, cardinality_next) = oracle::initialize(clock::timestamp_ms(&clock));
+        self.observation_cardinality = cardinality;
+        self.cardinality_next = cardinality_next;
+        self.locked = false;
 
         event::emit(Initialize {
             pool_id: object::id(self),
@@ -220,6 +234,7 @@ module flowx_clmm::pool {
         x_in: Balance<X>,
         y_in: Balance<Y>,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &TxContext
     ): (u64, u64) {
         versioned::check_version_and_upgrade(versioned);
@@ -228,7 +243,7 @@ module flowx_clmm::pool {
 
         self.locked = true;
         let add = i128::gte(liquidity_delta, i128::zero());
-        let (amount_x, amount_y) = modify_position(self, position, liquidity_delta);
+        let (amount_x, amount_y) = modify_position(self, position, liquidity_delta, clock);
 
         if (add) {
             if (balance::value(&x_in) < amount_x || balance::value(&y_in) < amount_y) {
@@ -697,7 +712,8 @@ module flowx_clmm::pool {
     fun modify_position<X, Y>(
         pool: &mut Pool<X, Y>,
         position: &mut Position,
-        liquidity_delta: I128
+        liquidity_delta: I128,
+        clock: &Clock,
     ): (u64, u64) {
         let add = i128::gte(liquidity_delta, i128::zero());
         let (tick_lower_index, tick_upper_index) = (position::tick_lower_index(position), position::tick_upper_index(position));
@@ -719,6 +735,18 @@ module flowx_clmm::pool {
                 )
             } else if (i32::lt(pool.tick_index, tick_upper_index)) {
                 // current tick is inside the passed range
+                let (observation_index, observation_cardinality) = oracle::write(
+                    &pool.observations,
+                    pool.observation_index,
+                    utils::to_seconds(clock::timestamp_ms(clock)),
+                    pool.tick_index,
+                    pool.liquidity,
+                    pool.observation_cardinality,
+                    pool.observation_cardinality_next
+                );
+                pool.observation_index = observation_index;
+                pool.observation_cardinality = observation_cardinality;
+
                 pool.liquidity = liquidity_math::add_delta(pool.liquidity, liquidity_delta);
                 (
                     sqrt_price_math::get_amount_x_delta(

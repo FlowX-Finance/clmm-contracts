@@ -23,4 +23,8 @@ module flowx_clmm::utils {
         
         comparator::is_smaller_than(&result)
     }
+
+    public fun to_seconds(ms: u64): u64 {
+        ms / 1000
+    }
 }

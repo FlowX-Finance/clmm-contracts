@@ -58,6 +58,13 @@ module flowx_clmm::position_mamanger {
         amount_y: u64
     }
 
+    fun init(ctx: &mut TxContext) {
+        transfer::share_object(PositionRegistry {
+            id: object::new(ctx),
+            num_positions: 0
+        });
+    }
+
     public fun open_position<X, Y>(
         self: &mut PositionRegistry,
         pool_registry: &PoolRegistry,
@@ -139,7 +146,7 @@ module flowx_clmm::position_mamanger {
         let (amount_x, amount_y) = if (utils::is_ordered<X, Y>()) {
             increase_liquidity_<X, Y>(self, position, x_in, y_in, versioned, ctx)
         } else {
-            let (amount_y, amount_x) = increase_liquidity_<Y, X>(self, position, y_in, x_in, versioned, ctx);
+            let (amount_y, amount_x) = increase_liquidity_<Y, X>(self, position, y_in, x_in, versioned, clock, ctx);
             (amount_x, amount_y)
         };
 
@@ -161,9 +168,9 @@ module flowx_clmm::position_mamanger {
     ) {
         utils::check_deadline(clock, deadline);
         let (amount_x, amount_y) = if (utils::is_ordered<X, Y>()) {
-            decrease_liquidity_<X, Y>(self, position, liquidity, versioned, ctx)
+            decrease_liquidity_<X, Y>(self, position, liquidity, versioned, clock, ctx)
         } else {
-            let (amount_y, amount_x) = decrease_liquidity_<Y, X>(self, position, liquidity, versioned, ctx);
+            let (amount_y, amount_x) = decrease_liquidity_<Y, X>(self, position, liquidity, versioned, clock, ctx);
             (amount_x, amount_y)
         };
 
@@ -178,12 +185,13 @@ module flowx_clmm::position_mamanger {
         amount_x_requested: u64,
         amount_y_requested: u64,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
         if (utils::is_ordered<X, Y>()) {
-            collect_<X, Y>(self, position, amount_x_requested, amount_y_requested, versioned, ctx)
+            collect_<X, Y>(self, position, amount_x_requested, amount_y_requested, versioned, clock, ctx)
         } else {
-            let (collectd_y, collectd_x) = collect_<Y, X>(self, position, amount_y_requested, amount_x_requested, versioned, ctx);
+            let (collectd_y, collectd_x) = collect_<Y, X>(self, position, amount_y_requested, amount_x_requested, versioned, clock, ctx);
             (collectd_x, collectd_y)
         }
     }
@@ -227,6 +235,7 @@ module flowx_clmm::position_mamanger {
         x_in: Coin<X>,
         y_in: Coin<Y>,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &TxContext
     ): (u64, u64) { 
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
@@ -238,7 +247,7 @@ module flowx_clmm::position_mamanger {
             coin::value(&y_in)
         );
         let (amount_x, amount_y) = pool::modify_liquidity(
-            pool, position, i128::from(liquidity), coin::into_balance(x_in), coin::into_balance(y_in), versioned, ctx
+            pool, position, i128::from(liquidity), coin::into_balance(x_in), coin::into_balance(y_in), versioned, clock, ctx
         );
 
         event::emit(IncreaseLiquidity {
@@ -258,11 +267,12 @@ module flowx_clmm::position_mamanger {
         position: &mut Position,
         liquidity: u128,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &TxContext
     ): (u64, u64) {
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         let (amount_x, amount_y) = pool::modify_liquidity(
-            pool, position, i128::neg_from(liquidity), balance::zero(), balance::zero(), versioned, ctx
+            pool, position, i128::neg_from(liquidity), balance::zero(), balance::zero(), versioned, clock, ctx
         );
 
         event::emit(DecreaseLiquidity {
@@ -283,6 +293,7 @@ module flowx_clmm::position_mamanger {
         amount_x_requested: u64,
         amount_y_requested: u64,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
         if (amount_x_requested == 0 && amount_y_requested == 0) {
@@ -292,7 +303,7 @@ module flowx_clmm::position_mamanger {
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         if (position::liquidity(position) > 0) {
             pool::modify_liquidity(
-                pool, position, i128::zero(), balance::zero(), balance::zero(), versioned, ctx
+                pool, position, i128::zero(), balance::zero(), balance::zero(), versioned, clock, ctx
             );
         };
         

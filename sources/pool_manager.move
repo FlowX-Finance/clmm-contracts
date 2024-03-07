@@ -5,6 +5,7 @@ module flowx_clmm::pool_manager {
     use sui::tx_context::{Self, TxContext};
     use sui::dynamic_object_field::{Self as dof};
     use sui::event;
+    use sui::transfer;
 
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::pool::{Self, Pool};
@@ -42,6 +43,14 @@ module flowx_clmm::pool_manager {
         sender: address,
         fee_rate: u64,
         tick_spacing: u32
+    }
+
+    fun init(ctx: &mut TxContext) {
+        transfer::share_object(PoolRegistry {
+            id: object::new(ctx),
+            fee_amount_tick_spacing: table::new(ctx),
+            num_pools: 0
+        });
     }
     
     fun pool_key<X, Y>(fee_rate: u64): PoolDfKey {
@@ -102,6 +111,22 @@ module flowx_clmm::pool_manager {
             create_pool_<X, Y>(self, fee_rate, ctx);
         } else {
             create_pool_<Y, X>(self, fee_rate, ctx);
+        };
+    }
+
+    public fun create_and_initialize_pool<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        sqrt_price: u128,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        create_pool<X, Y>(self, fee_rate, versioned, ctx);
+        if (utils::is_ordered<X, Y>()) {
+            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, clock);
+        } else {
+            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, clock);
         };
     }
 
