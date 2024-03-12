@@ -195,4 +195,116 @@ module flowx_clmm::tick_bitmap {
 
         table::drop(tick_bitmap);
     }
+
+    #[test_only]
+    public fun init_tick(): Table<I32, u256> {
+        use std::vector;
+        let tick_indexs = vector<I32> [
+            i32::neg_from(200),
+            i32::neg_from(55),
+            i32::neg_from(4),
+            i32::from(70),
+            i32::from(78),
+            i32::from(84),
+            i32::from(139),
+            i32::from(240),
+            i32::from(535),
+        ];
+
+        let tick_bitmap = table::new<I32, u256>(&mut sui::tx_context::dummy());
+        let (i, len) = (0, vector::length(&tick_indexs));
+        while(i < len) {
+            flip_tick(&mut tick_bitmap, *vector::borrow(&mut tick_indexs, i), 1);
+            i = i + 1;
+        };
+        tick_bitmap
+    }
+
+    #[test]
+    public fun test_next_initialized_tick_within_one_word_lte_false() {
+        //returns tick to right if at initialized tick
+        let tick_bitmap = init_tick();
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(78), 1, false);
+        assert!(i32::eq(next, i32::from(84)) && initialized, 0);
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::neg_from(55), 1, false);
+        assert!(i32::eq(next, i32::neg_from(4)) && initialized, 0);
+
+        //returns the tick directly to the right
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(77), 1, false);
+        assert!(i32::eq(next, i32::from(78)) && initialized, 0);
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::neg_from(56), 1, false);
+        assert!(i32::eq(next, i32::neg_from(55)) && initialized, 0);
+
+        //returns the next words initialized tick if on the right boundary
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(255), 1, false);
+        assert!(i32::eq(next, i32::from(511)) && !initialized, 0);
+        
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::neg_from(257), 1, false);
+        assert!(i32::eq(next, i32::neg_from(200)) && initialized, 0);
+
+        //returns the next initialized tick from the next word
+        flip_tick(&mut tick_bitmap, i32::from(340), 1);
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(328), 1, false);
+        assert!(i32::eq(next, i32::from(340)) && initialized, 0);
+
+        flip_tick(&mut tick_bitmap, i32::from(340), 1);
+
+        //does not exceed boundary
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(508), 1, false);
+        assert!(i32::eq(next, i32::from(511)) && !initialized, 0);
+
+        //skips entire word
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(255), 1, false);
+        assert!(i32::eq(next, i32::from(511)) && !initialized, 0);
+
+        //skips half word
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(383), 1, false);
+        assert!(i32::eq(next, i32::from(511)) && !initialized, 0);
+
+        table::drop(tick_bitmap);
+    }
+
+    #[test]
+    public fun test_next_initialized_tick_within_one_word_lte_true() {
+        let tick_bitmap = init_tick();
+
+        //returns same tick if initialized
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(78), 1, true);
+        assert!(i32::eq(next, i32::from(78)) && initialized, 0);
+
+        //returns tick directly to the left of input tick if not initialized
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(79), 1, true);
+        assert!(i32::eq(next, i32::from(78)) && initialized, 0);
+
+        //will not exceed the word boundary
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(258), 1, true);
+        assert!(i32::eq(next, i32::from(256)) && !initialized, 0);
+
+        //at the word boundary
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(256), 1, true);
+        assert!(i32::eq(next, i32::from(256)) && !initialized, 0);
+
+        //word boundary less 1 (next initialized tick in next word
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(72), 1, true);
+        assert!(i32::eq(next, i32::from(70)) && initialized, 0);
+
+        //word boundary
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::neg_from(257), 1, true);
+        assert!(i32::eq(next, i32::neg_from(512)) && !initialized, 0);
+
+        //entire empty word
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(1023), 1, true);
+        assert!(i32::eq(next, i32::from(768)) && !initialized, 0);
+
+        //halfway through empty word
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(900), 1, true);
+        assert!(i32::eq(next, i32::from(768)) && !initialized, 0);
+
+        //boundary is initialized
+        flip_tick(&mut tick_bitmap, i32::from(329), 1);
+        let (next, initialized) = next_initialized_tick_within_one_word(&tick_bitmap, i32::from(456), 1, true);
+        assert!(i32::eq(next, i32::from(329)) && initialized, 0);        
+
+        table::drop(tick_bitmap);
+    }
 }

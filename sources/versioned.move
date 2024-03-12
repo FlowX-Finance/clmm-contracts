@@ -6,7 +6,7 @@ module flowx_clmm::versioned {
     use flowx_clmm::admin_cap::AdminCap;
     friend flowx_clmm::pool;
     friend flowx_clmm::pool_manager;
-    friend flowx_clmm::position_mamanger;
+    friend flowx_clmm::position_manager;
 
     const VERSION: u64 = 1;
 
@@ -41,5 +41,19 @@ module flowx_clmm::versioned {
     public fun upgrade(_: &AdminCap, self: &mut Versioned) {
         assert!(self.version < VERSION, E_NOT_UPGRADED);
         self.version = VERSION;
+    }
+
+    #[test_only]
+    public fun create_for_testing(ctx: &mut TxContext): Versioned {
+        Versioned {
+            id: object::new(ctx),
+            version: VERSION
+        }
+    }
+
+    #[test_only]
+    public fun destroy_for_testing(versioned: Versioned) {
+        let Versioned { id, version: _ } = versioned;
+        object::delete(id); 
     }
 }

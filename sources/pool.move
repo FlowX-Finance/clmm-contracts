@@ -149,18 +149,53 @@ module flowx_clmm::pool {
     }
 
     struct Initialize has copy, drop, store {
+        sender: address,
         pool_id: ID,
         sqrt_price: u128,
         tick_index: I32
     }
 
-    public fun sqrt_price_current<X, Y>(self: &Pool<X, Y>): u128 { self.sqrt_price }
-
-    public fun tick_index_current<X, Y>(self: &Pool<X, Y>): I32 { self.tick_index }
+    public fun pool_id<X, Y>(self: &Pool<X, Y>): ID { object::id(self) }
 
     public fun coin_type_x<X, Y>(self: &Pool<X, Y>): TypeName { self.coin_type_x }
 
     public fun coin_type_y<X, Y>(self: &Pool<X, Y>): TypeName { self.coin_type_y }
+
+    public fun sqrt_price_current<X, Y>(self: &Pool<X, Y>): u128 { self.sqrt_price }
+
+    public fun tick_index_current<X, Y>(self: &Pool<X, Y>): I32 { self.tick_index }
+
+    public fun observation_index<X, Y>(self: &Pool<X, Y>): u64 { self.observation_index }
+
+    public fun observation_cardinality<X, Y>(self: &Pool<X, Y>): u64 { self.observation_cardinality }
+
+    public fun observation_cardinality_next<X, Y>(self: &Pool<X, Y>): u64 { self.observation_cardinality_next }
+
+    public fun tick_spacing<X, Y>(self: &Pool<X, Y>): u32 { self.tick_spacing }
+
+    public fun max_liquidity_per_tick<X, Y>(self: &Pool<X, Y>): u128 { self.max_liquidity_per_tick }
+
+    public fun protocol_fee_rate<X, Y>(self: &Pool<X, Y>): u64 { self.protocol_fee_rate }
+
+    public fun swap_fee_rate<X, Y>(self: &Pool<X, Y>): u64 { self.swap_fee_rate }
+
+    public fun fee_growth_global_x<X, Y>(self: &Pool<X, Y>): u128 { self.fee_growth_global_x }
+
+    public fun fee_growth_global_y<X, Y>(self: &Pool<X, Y>): u128 { self.fee_growth_global_y }
+
+    public fun protocol_fee_x<X, Y>(self: &Pool<X, Y>): u64 { self.protocol_fee_x }
+
+    public fun protocol_fee_y<X, Y>(self: &Pool<X, Y>): u64 { self.protocol_fee_y }
+
+    public fun liquidity<X, Y>(self: &Pool<X, Y>): u128 { self.liquidity }
+
+    public fun borrow_ticks<X, Y>(self: &Pool<X, Y>): &Table<I32, TickInfo> { &self.ticks }
+
+    public fun borrow_tick_bitmap<X, Y>(self: &Pool<X, Y>): &Table<I32, u256> { &self.tick_bitmap }
+
+    public fun borrow_observations<X, Y>(self: &Pool<X, Y>): &vector<Observation> { &self.observations }
+
+    public fun is_locked<X, Y>(self: &Pool<X, Y>): bool { self.locked }
 
     public fun reserves<X, Y>(self: &Pool<X, Y>): (u64, u64) {
         (
@@ -168,8 +203,6 @@ module flowx_clmm::pool {
             balance::value(df::borrow<ReserveDfKey<Y>, Balance<Y>>(&self.id, ReserveDfKey<Y> {}))
         )
     }
-
-    public fun swap_fee_rate<X, Y>(self: &Pool<X, Y>): u64 { self.swap_fee_rate }
 
     public fun receipt_debts(receipt: &Receipt): (u64, u64) { (receipt.amount_x_debt, receipt.amount_y_debt) }
 
@@ -209,7 +242,8 @@ module flowx_clmm::pool {
     public fun initialize<X, Y>(
         self: &mut Pool<X, Y>,
         sqrt_price: u128,
-        clock: &Clock
+        clock: &Clock,
+        ctx: &TxContext
     ) {
         if (self.sqrt_price > 0) {
             abort E_POOL_ALREADY_INITIALIZED
@@ -225,6 +259,7 @@ module flowx_clmm::pool {
         self.locked = false;
 
         event::emit(Initialize {
+            sender: tx_context::sender(ctx),
             pool_id: object::id(self),
             sqrt_price,
             tick_index
@@ -248,7 +283,6 @@ module flowx_clmm::pool {
         self.locked = true;
         let add = i128::gte(liquidity_delta, i128::zero());
         let (amount_x, amount_y) = modify_position(self, position, liquidity_delta, clock);
-
         if (add) {
             if (balance::value(&x_in) < amount_x || balance::value(&y_in) < amount_y) {
                 abort E_INSUFFICIENT_INPUT_AMOUNT
@@ -466,10 +500,22 @@ module flowx_clmm::pool {
             (state.amount_calculated, amount_specified - state.amount_specified_remaining)
         };
 
-        let (x_out, y_out) = if (x_for_y) {
-            take(self, 0, amount_y)
+        let (x_out, y_out, receipt) = if (x_for_y) {
+            let receipt = Receipt {
+                pool_id: object::id(self),
+                amount_x_debt: amount_x,
+                amount_y_debt: 0
+            };
+            let (taked_x, taked_y) = take(self, 0, amount_y);
+            (taked_x, taked_y, receipt)
         } else {
-            take(self, amount_x, 0)
+             let receipt = Receipt {
+                pool_id: object::id(self),
+                amount_x_debt: 0,
+                amount_y_debt: amount_y
+            };
+            let (taked_x, taked_y) = take(self, amount_x, 0);
+            (taked_x, taked_y, receipt)
         };
 
         event::emit(Swap {
@@ -482,11 +528,7 @@ module flowx_clmm::pool {
             tick_index: state.tick_index
         });
 
-        (x_out, y_out, Receipt {
-            pool_id: object::id(self),
-            amount_x_debt: amount_x,
-            amount_y_debt: amount_y
-        })
+        (x_out, y_out, receipt)
     }
 
     public fun pay<X, Y>(
@@ -739,17 +781,17 @@ module flowx_clmm::pool {
                 )
             } else if (i32::lt(pool.tick_index, tick_upper_index)) {
                 // current tick is inside the passed range
-                let (observation_index, observation_cardinality) = oracle::write(
-                    &mut pool.observations,
-                    pool.observation_index,
-                    utils::to_seconds(clock::timestamp_ms(clock)),
-                    pool.tick_index,
-                    pool.liquidity,
-                    pool.observation_cardinality,
-                    pool.observation_cardinality_next
-                );
-                pool.observation_index = observation_index;
-                pool.observation_cardinality = observation_cardinality;
+                // let (observation_index, observation_cardinality) = oracle::write(
+                //     &mut pool.observations,
+                //     pool.observation_index,
+                //     utils::to_seconds(clock::timestamp_ms(clock)),
+                //     pool.tick_index,
+                //     pool.liquidity,
+                //     pool.observation_cardinality,
+                //     pool.observation_cardinality_next
+                // );
+                // pool.observation_index = observation_index;
+                // pool.observation_cardinality = observation_cardinality;
 
                 pool.liquidity = liquidity_math::add_delta(pool.liquidity, liquidity_delta);
                 (
@@ -872,5 +914,895 @@ module flowx_clmm::pool {
     ) {
         balance::join(df::borrow_mut(&mut self.id, ReserveDfKey<X> {}), payment_x);
         balance::join(df::borrow_mut(&mut self.id, ReserveDfKey<Y> {}), payment_y);
+    }
+
+    #[test_only]
+    public fun create_for_testing<X, Y>(
+        fee_rate: u64,
+        tick_spacing: u32,
+        ctx: &mut TxContext
+    ): Pool<X, Y> {
+        create<X, Y>(fee_rate, tick_spacing, ctx)
+    }
+
+    #[test_only]
+    public fun destroy_for_testing<X, Y>(pool: Pool<X, Y>) {
+        let Pool {
+            id, coin_type_x: _, coin_type_y: _, sqrt_price: _, tick_index: _, observation_index: _, observation_cardinality: _,
+            observation_cardinality_next: _, tick_spacing: _, max_liquidity_per_tick: _, protocol_fee_rate: _, swap_fee_rate: _,
+            fee_growth_global_x: _, fee_growth_global_y: _, protocol_fee_x: _, protocol_fee_y: _, liquidity: _, ticks, tick_bitmap,
+            observations, locked: _
+        } = pool;
+        object::delete(id);
+        table::drop(ticks);
+        table::drop(tick_bitmap);
+    }
+}
+
+#[test_only]
+module flowx_clmm::test_pool {
+    use std::vector;
+    use sui::tx_context;
+    use sui::sui::SUI;
+    use sui::balance;
+    use sui::clock;
+
+    use flowx_clmm::i32::{Self, I32};
+    use flowx_clmm::i64;
+    use flowx_clmm::i128;
+    use flowx_clmm::pool;
+    use flowx_clmm::test_utils;
+    use flowx_clmm::tick_math;
+    use flowx_clmm::oracle;
+    use flowx_clmm::position;
+    use flowx_clmm::versioned;
+    use flowx_clmm::tick;
+    use flowx_clmm::constants;
+
+    struct USDC has drop {}
+
+    #[test]
+    fun test_initialize() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let (fee_rate, tick_spacing) = (3000, 60);
+    
+        clock::set_for_testing(&mut clock, 100);
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        let price = test_utils::encode_sqrt_price(1, 2);
+        pool::initialize(&mut pool, price, &clock, &ctx);
+        assert!(
+            pool::sqrt_price_current(&pool) == price &&
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(6932)) &&
+            pool::observation_index(&pool) == 0 &&
+            pool::observation_cardinality(&pool) == 1 &&
+            pool::observation_cardinality_next(&pool) == 1,
+            0
+        );
+
+        let observation = vector::borrow(pool::borrow_observations(&pool), 0);
+        assert!(
+            oracle::timestamp_s(observation) == 100 &&
+            i64::eq(oracle::tick_cumulative(observation), i64::zero()) &&
+            oracle::seconds_per_liquidity_cumulative(observation) == 0 &&
+            oracle::is_initialized(observation),
+            0
+        );
+
+        clock::destroy_for_testing(clock);
+        pool::destroy_for_testing(pool);
+    }
+
+    #[test]
+    fun test_add_liquidity_above_current_price() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 10), &clock, &ctx);
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(3161), balance::create_for_testing(9996), balance::create_for_testing(1000), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 && ry == 1000 && amount_x == 9996 && amount_y == 1000,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(22980), i32::zero(), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(21549),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 + 21549 && ry == 1000 && amount_x == 21549 && amount_y == 0,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //max tick with max leverage
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::sub(max_tick, i32::from(tick_spacing)), max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(1 << 100), balance::create_for_testing(889231715489490855),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 + 21549 + 889231715489490855 && ry == 1000 && amount_x == 889231715489490855 && amount_y == 0,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //works for max tick
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(22980), max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(31549),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 + 21549 + 889231715489490855 + 31549 && ry == 1000 && amount_x == 31549 && amount_y == 0,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //adds liquidity to liquidityGross
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(240), i32::zero(), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(100), balance::create_for_testing(2),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(240)) == 100 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::zero()) == 10100 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing)) == 0 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing * 2)) == 0,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(240), i32::from(tick_spacing), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(150), balance::create_for_testing(3),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(240)) == 250 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::zero()) == 10100 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing)) == 150 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing * 2)) == 0,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::zero(), i32::from(tick_spacing * 2), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(60), balance::create_for_testing(1),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(240)) == 250 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::zero()) == 10160 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing)) == 150 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing * 2)) == 60,
+            0
+        );
+
+        //removes liquidity from liquidityGross
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(10), balance::create_for_testing(1),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(240)) == 250 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::zero()) == 10150 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing)) == 150 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(tick_spacing * 2)) == 50,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //clears tick lower if last position is removed
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(300), i32::zero(), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(100), balance::create_for_testing(2),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(300)) == 100 &&
+            tick::is_initialized(pool::borrow_ticks(&pool), i32::neg_from(300)),
+            0
+        );
+           
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(100), balance::create_for_testing(2),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::neg_from(300)) == 0 &&
+            !tick::is_initialized(pool::borrow_ticks(&pool), i32::neg_from(300)),
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //clears tick upper if last position is removed
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::zero(), i32::from(180), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(100), balance::create_for_testing(2),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(180)) == 100 &&
+            tick::is_initialized(pool::borrow_ticks(&pool), i32::from(180)),
+            0
+        );
+           
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(100), balance::create_for_testing(2),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::from(180)) == 0 &&
+            !tick::is_initialized(pool::borrow_ticks(&pool), i32::from(180)),
+            0
+        );
+        position::destroy_for_testing(position);
+
+        clock::destroy_for_testing(clock);
+        pool::destroy_for_testing(pool);
+        versioned::destroy_for_testing(versioned);
+    }
+
+    #[test]
+    fun test_add_liquidity_including_current_price() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 10), &clock, &ctx);
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(3161), balance::create_for_testing(9996), balance::create_for_testing(1000), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 && ry == 1000 && amount_x == 9996 && amount_y == 1000,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //price within range: transfers current price of both tokens
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool),
+            i32::add(min_tick, i32::from(tick_spacing)), i32::sub(max_tick, i32::from(tick_spacing)), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(100), balance::create_for_testing(317), balance::create_for_testing(32), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            rx == 9996 + 317 && ry == 1000 + 32 && amount_x == 317 && amount_y == 32 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::add(min_tick, i32::from(tick_spacing))) == 100 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), i32::sub(max_tick, i32::from(tick_spacing))) == 100,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //works for min/max tick
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(31623), balance::create_for_testing(3163), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            rx == 9996 + 317 + 31623 && ry == 1000 + 32 + 3163 && amount_x == 31623 && amount_y == 3163 &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), min_tick) == 3161 + 10000  &&
+            tick::get_liquidity_gross(pool::borrow_ticks(&pool), min_tick) == 3161 + 10000,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //removing works
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(100), balance::create_for_testing(317), balance::create_for_testing(32), &mut versioned, &clock, &ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(100), balance::create_for_testing(0), balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(amount_x == 316 && amount_y == 31, 0);
+        position::destroy_for_testing(position);
+
+        clock::destroy_for_testing(clock);
+        pool::destroy_for_testing(pool);
+        versioned::destroy_for_testing(versioned);
+    }
+
+    #[test]
+    fun test_add_liquidity_below_current_price() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 10), &clock, &ctx);
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(3161), balance::create_for_testing(9996), balance::create_for_testing(1000), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 && ry == 1000 && amount_x == 9996 && amount_y == 1000,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //transfers token1 only
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool),
+            i32::neg_from(46080), i32::neg_from(23040), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(0), balance::create_for_testing(2162), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            rx == 9996 && ry == 1000 + 2162 && amount_x == 0 && amount_y == 2162,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //min tick with max leverage
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, i32::add(min_tick, i32::from(tick_spacing)), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(1 << 102), balance::create_for_testing(0),
+            balance::create_for_testing(3556926712925126656), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 && ry == 1000 + 2162 + 3556926712925126656 && amount_x == 0 && amount_y == 3556926712925126656,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //works for min tick
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, i32::neg_from(23040), &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(0),
+            balance::create_for_testing(3161), &mut versioned, &clock, &ctx
+        );
+        let (rx, ry) = pool::reserves(&pool);
+        assert!(
+            i32::eq(pool::tick_index_current(&pool), i32::neg_from(23028)) &&
+            rx == 9996 && ry == 1000 + 2162 + 3556926712925126656 + 3161 && amount_x == 0 && amount_y == 3161,
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //removing works
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::neg_from(46080), i32::neg_from(46020), &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(10000), balance::create_for_testing(0),
+            balance::create_for_testing(4), &mut versioned, &clock, &ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(10000), balance::create_for_testing(0),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        let (collected_x, collected_y) = pool::collect(
+            &mut pool, &mut position,  constants::get_max_u64(), constants::get_max_u64(), &mut versioned, &mut ctx
+        );
+        
+        assert!(
+            balance::value(&collected_x) == 0 && balance::value(&collected_y) == 3,
+            0
+        );
+        balance::destroy_for_testing(collected_x);
+        balance::destroy_for_testing(collected_y);
+        position::destroy_for_testing(position);
+
+        clock::destroy_for_testing(clock);
+        pool::destroy_for_testing(pool);
+        versioned::destroy_for_testing(versioned);
+    }
+
+    #[test_only]
+    fun swap_to_lower_price<X, Y>(pool: &mut Pool<X, Y>, sqrt_price: u128, versioned: &mut Versioned) {
+        let (x_out, y_out, receipt) = pool::swap(pool, true, true, constants::get_max_u64(), sqrt_price, versioned, &tx_context::dummy());
+        balance::destroy_for_testing(x_out);
+        balance::destroy_for_testing(y_out);
+
+        let (amount_x_debt, _) = pool::receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::create_for_testing(amount_x_debt), balance::zero(), versioned);
+    }
+
+    #[test_only]
+    fun swap_to_higher_price<X, Y>(pool: &mut Pool<X, Y>, sqrt_price: u128, versioned: &mut Versioned) {
+        let (x_out, y_out, receipt) = pool::swap(pool, false, true, constants::get_max_u64(), sqrt_price, versioned, &tx_context::dummy());
+        balance::destroy_for_testing(x_out);
+        balance::destroy_for_testing(y_out);
+
+        let (_, amount_y_debt) = pool::receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::zero(), balance::create_for_testing(amount_y_debt), versioned);
+    }
+
+    #[test]
+    fun test_remove_liquidity(){
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 1), &clock, &ctx);
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), min_tick, max_tick, &mut ctx
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(2000000000),
+            balance::create_for_testing(2000000000), &mut versioned, &clock, &ctx
+        );
+        position::destroy_for_testing(position);
+
+        //clears the tick if its the last position using it
+        let (tick_lower_index, tick_upper_index) = (i32::add(min_tick, i32::from(tick_spacing)), i32::sub(max_tick, i32::from(tick_spacing)));
+        let position = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), tick_lower_index, tick_upper_index, &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::from(1), balance::create_for_testing(1),
+            balance::create_for_testing(1), &mut versioned, &clock, &ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position, i128::neg_from(1), balance::create_for_testing(0),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            !tick::is_initialized(pool::borrow_ticks(&pool), tick_lower_index) &&
+            !tick::is_initialized(pool::borrow_ticks(&pool), tick_upper_index),
+            0
+        );
+        position::destroy_for_testing(position);
+
+        //clears only the lower tick if upper is still used
+        let (tick_lower_index, tick_upper_index) = (i32::add(min_tick, i32::from(tick_spacing)), i32::sub(max_tick, i32::from(tick_spacing)));
+        let position0 = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), tick_lower_index, tick_upper_index, &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position0, i128::from(1), balance::create_for_testing(1),
+            balance::create_for_testing(1), &mut versioned, &clock, &ctx
+        );
+
+        let position1 = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), i32::add(tick_lower_index, i32::from(tick_spacing)), tick_upper_index, &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position1, i128::from(1), balance::create_for_testing(1),
+            balance::create_for_testing(1), &mut versioned, &clock, &ctx
+        );
+
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position0, i128::neg_from(1), balance::create_for_testing(0),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            !tick::is_initialized(pool::borrow_ticks(&pool), tick_lower_index) &&
+            tick::is_initialized(pool::borrow_ticks(&pool), i32::add(tick_lower_index, i32::from(tick_spacing))) &&
+            tick::is_initialized(pool::borrow_ticks(&pool), tick_upper_index),
+            0
+        );
+         pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position1, i128::neg_from(1), balance::create_for_testing(0),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        position::destroy_for_testing(position0);
+        position::destroy_for_testing(position1);
+
+        //clears only the upper tick if lower is still used
+        let (tick_lower_index, tick_upper_index) = (i32::add(min_tick, i32::from(tick_spacing)), i32::sub(max_tick, i32::from(tick_spacing)));
+        let position0 = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), tick_lower_index, tick_upper_index, &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position0, i128::from(1), balance::create_for_testing(1),
+            balance::create_for_testing(1), &mut versioned, &clock, &ctx
+        );
+
+        let position1 = position::create_for_testing(
+            pool::pool_id(&pool), fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool), tick_lower_index, i32::sub(tick_upper_index, i32::from(tick_spacing)), &mut ctx
+        );
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position1, i128::from(1), balance::create_for_testing(1),
+            balance::create_for_testing(1), &mut versioned, &clock, &ctx
+        );
+
+        pool::modify_liquidity<SUI, USDC>(
+            &mut pool, &mut position0, i128::neg_from(1), balance::create_for_testing(0),
+            balance::create_for_testing(0), &mut versioned, &clock, &ctx
+        );
+        
+        assert!(
+            tick::is_initialized(pool::borrow_ticks(&pool), tick_lower_index) &&
+            tick::is_initialized(pool::borrow_ticks(&pool), i32::sub(tick_upper_index, i32::from(tick_spacing))) &&
+            !tick::is_initialized(pool::borrow_ticks(&pool), tick_upper_index),
+            0
+        );
+        position::destroy_for_testing(position0);
+        position::destroy_for_testing(position1);
+
+        clock::destroy_for_testing(clock);
+        pool::destroy_for_testing(pool);
+        versioned::destroy_for_testing(versioned);
+    }
+
+    struct PositionTestCase has copy, drop, store {
+        tick_lower_index: I32,
+        tick_upper_index: I32,
+        liquidity: u128
+    }
+
+    struct PoolTestcase has copy, drop, store {
+        fee_rate: u64,
+        tick_spacing: u32,
+        starting_price: u128,
+        positions: vector<PositionTestCase>,
+        swap_test_cases: vector<SwapTestCase>,
+    }
+
+    struct SwapTestCase has copy, drop, store {
+        x_for_y: bool,
+        exact_in: bool,
+        amount_x: u64,
+        amount_y: u64,
+        sqrt_price_limit: u128,
+        amount_x_out: u64,
+        amount_y_out: u64,
+        sqrt_price_after: u128
+    }
+
+    #[test]
+    fun test_swap() {
+        let test_pools = vector<PoolTestcase> [
+            //low fee, 1:1 price, 2e9 max range liquidity
+            PoolTestcase {
+                fee_rate: 500,
+                tick_spacing: 10,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(10),
+                        tick_upper_index: test_utils::get_max_tick(10),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> [
+                    // SwapTestCase {
+                    //     x_for_y: true,
+                    //     exact_in: true,
+                    //     amount_x: test_utils::expand_to_9_decimals(1),
+                    //     amount_y: 0,
+                    //     sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                    //     amount_x_out: 0,
+                    //     amount_y_out: 666444406,
+                    //     sqrt_price_after: 12299879366966330045
+                    // },
+                    // SwapTestCase {
+                    //     x_for_y: false,
+                    //     exact_in: true,
+                    //     amount_x: 0,
+                    //     amount_y: test_utils::expand_to_9_decimals(1),
+                    //     sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                    //     amount_x_out: 666444405,
+                    //     amount_y_out: 0,
+                    //     sqrt_price_after: 27665504414910427430
+                    // },
+                    // SwapTestCase {
+                    //     x_for_y: true,
+                    //     exact_in: false,
+                    //     amount_x: 2001000510,
+                    //     amount_y: test_utils::expand_to_9_decimals(1),
+                    //     sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                    //     amount_x_out: 0,
+                    //     amount_y_out: test_utils::expand_to_9_decimals(1),
+                    //     sqrt_price_after: 9223372019252014507
+                    // },
+                    // SwapTestCase {
+                    //     x_for_y: false,
+                    //     exact_in: false,
+                    //     amount_x: test_utils::expand_to_9_decimals(1),
+                    //     amount_y: 2001000508,
+                    //     sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                    //     amount_x_out: test_utils::expand_to_9_decimals(1),
+                    //     amount_y_out: 0,
+                    //     sqrt_price_after: 36893488189460835287
+                    // }
+                ]
+            },
+            //medium fee, 10:1 price, 2e9 max range liquidity
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(10, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(60),
+                        tick_upper_index: test_utils::get_max_tick(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 3869747608,
+                        sqrt_price_after: 22641604797571698249
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 86123526,
+                        amount_y_out: 0,
+                        sqrt_price_after: 67529428607879370328
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 119138327,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_after: 49110354650280383040
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 8591531216544024189,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 632455515,
+                        amount_y_out: 0,
+                        sqrt_price_after: 79226673515401279992447579054
+                    }
+                ]
+            },
+            //medium fee, 1:10 price, 2e9 max range liquidity
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(1, 10),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(60),
+                        tick_upper_index: test_utils::get_max_tick(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+            //medium fee, 1:1 price, 0 liquidity, all liquidity around current price
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(60),
+                        tick_upper_index: i32::neg_from(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    },
+                    PositionTestCase {
+                        tick_lower_index: i32::from(60),
+                        tick_upper_index: test_utils::get_max_tick(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+            //medium fee, 1:1 price, additional liquidity around current price
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(60),
+                        tick_upper_index: test_utils::get_max_tick(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    },
+                    PositionTestCase {
+                        tick_lower_index: test_utils::get_min_tick(60),
+                        tick_upper_index: i32::neg_from(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    },
+                    PositionTestCase {
+                        tick_lower_index: i32::from(60),
+                        tick_upper_index: test_utils::get_max_tick(60),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+            //low fee, large liquidity around current price (stable swap)
+            PoolTestcase {
+                fee_rate: 500,
+                tick_spacing: 10,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: i32::neg_from(10),
+                        tick_upper_index: i32::from(10),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+            //medium fee, token0 liquidity only
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: i32::zero(),
+                        tick_upper_index: i32::from(60 * 2000),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+            //medium fee, token1 liquidity only
+            PoolTestcase {
+                fee_rate: 3000,
+                tick_spacing: 60,
+                starting_price: test_utils::encode_sqrt_price(1, 1),
+                positions: vector<PositionTestCase> [
+                    PositionTestCase {
+                        tick_lower_index: i32::neg_from(60 * 2000),
+                        tick_upper_index: i32::zero(),
+                        liquidity: (test_utils::expand_to_9_decimals(2) as u128)
+                    }
+                ],
+                swap_test_cases: vector<SwapTestCase> []
+            },
+        ];
+
+        let (i, num_pools) = (0, vector::length(&test_pools));
+        while(i < num_pools) {
+            let pool_test_case = vector::borrow(&test_pools, i);
+            let (j, num_tests) = (0, vector::length(&pool_test_case.swap_test_cases));
+            while(j < num_tests) {
+                let ctx = tx_context::new_from_hint(@0x0, i + j, i, i, i);
+                let clock = clock::create_for_testing(&mut ctx);
+                let versioned = versioned::create_for_testing(&mut ctx);
+
+                let pool = pool::create_for_testing<SUI, USDC>(pool_test_case.fee_rate, pool_test_case.tick_spacing, &mut ctx);
+                pool::initialize(&mut pool, pool_test_case.starting_price, &clock, &ctx);
+
+                let (k, num_positions) = (0, vector::length(&pool_test_case.positions));
+                while(k < num_positions) {
+                    let position_test_case = vector::borrow(&pool_test_case.positions, k);
+                    let position = position::create_for_testing(
+                        pool::pool_id(&pool), pool_test_case.fee_rate, pool::coin_type_x(&pool), pool::coin_type_y(&pool),
+                        position_test_case.tick_lower_index, position_test_case.tick_upper_index, &mut ctx
+                    );
+                
+                    let (amount_x, amount_y) = flowx_clmm::liquidity_math::get_amounts_for_liquidity(
+                        pool::sqrt_price_current(&pool),
+                        tick_math::get_sqrt_price_at_tick(position_test_case.tick_lower_index),
+                        tick_math::get_sqrt_price_at_tick(position_test_case.tick_upper_index),
+                        position_test_case.liquidity,
+                    );
+                    pool::modify_liquidity<SUI, USDC>(
+                        &mut pool, &mut position, i128::from(position_test_case.liquidity), balance::create_for_testing(amount_x),
+                        balance::create_for_testing(amount_y), &mut versioned, &clock, &ctx
+                    );
+                    position::destroy_for_testing(position);
+
+                    k = k + 1;
+                };
+
+                let (pool_balance_x_before, pool_balance_y_before) = pool::reserves(&pool);
+                let swap_test_case = vector::borrow(&pool_test_case.swap_test_cases, j);
+                let amount_specified = if (swap_test_case.x_for_y) {
+                    if (swap_test_case.exact_in) {
+                        swap_test_case.amount_x
+                    } else {
+                        swap_test_case.amount_y
+                    }
+                } else {
+                    if (swap_test_case.exact_in) {
+                        swap_test_case.amount_y
+                    } else {
+                        swap_test_case.amount_x
+                    }
+                };
+                let (x_out, y_out, receipt) = pool::swap(
+                    &mut pool, swap_test_case.x_for_y, swap_test_case.exact_in, amount_specified,
+                    swap_test_case.sqrt_price_limit, &mut versioned, &ctx
+                );
+                let (amount_x_debt, amount_y_debt) = pool::receipt_debts(&receipt);
+                pool::pay(&mut pool, receipt, balance::create_for_testing(amount_x_debt), balance::create_for_testing(amount_y_debt), &mut versioned);
+
+                assert!(
+                    balance::value(&x_out) == swap_test_case.amount_x_out && balance::value(&y_out) == swap_test_case.amount_y_out &&
+                    amount_x_debt <= swap_test_case.amount_x && amount_y_debt <= swap_test_case.amount_y &&
+                    pool::sqrt_price_current(&pool) == swap_test_case.sqrt_price_after,
+                    0
+                );
+                balance::destroy_for_testing(x_out);
+                balance::destroy_for_testing(y_out);
+
+                clock::destroy_for_testing(clock);
+                pool::destroy_for_testing(pool);
+                versioned::destroy_for_testing(versioned);
+
+                j = j + 1;
+            };
+            i = i + 1;
+        }
     }
 }

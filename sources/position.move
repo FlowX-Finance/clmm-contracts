@@ -14,7 +14,7 @@ module flowx_clmm::position {
     use flowx_clmm::liquidity_math;
 
     friend flowx_clmm::pool;
-    friend flowx_clmm::position_mamanger;
+    friend flowx_clmm::position_manager;
 
     const E_EMPTY_POSITION: u64 = 1;
 
@@ -143,5 +143,27 @@ module flowx_clmm::position {
         self.fee_growth_inside_y_last = fee_growth_inside_y;
         self.coins_owed_x = self.coins_owed_x + (coins_owed_x as u64);
         self.coins_owed_y = self.coins_owed_y + (coins_owed_y as u64);
+    }
+
+    #[test_only]
+    public fun create_for_testing(
+        pool_id: ID,
+        fee_rate: u64,
+        coin_type_x: TypeName,
+	    coin_type_y: TypeName,
+        tick_lower_index: I32,
+	    tick_upper_index: I32,
+        ctx: &mut TxContext
+    ): Position {
+        open(pool_id, fee_rate, coin_type_x, coin_type_y, tick_lower_index, tick_upper_index, ctx)
+    }
+
+    #[test_only]
+    public fun destroy_for_testing(position: Position) {
+        let Position { 
+            id, pool_id: _, fee_rate: _, coin_type_x: _, coin_type_y: _, tick_lower_index: _, tick_upper_index: _,
+            liquidity: _, fee_growth_inside_x_last: _, fee_growth_inside_y_last: _, coins_owed_x: _, coins_owed_y: _
+        } = position;
+        object::delete(id);
     }
 }

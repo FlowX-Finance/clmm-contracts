@@ -1,5 +1,8 @@
 #[test_only]
 module flowx_clmm::test_utils {
+    use flowx_clmm::i32::{Self, I32};
+    use flowx_clmm::tick_math;
+
     #[test_only]
     public fun pow(base: u256, exponent: u8): u256 {
         let res = 1;
@@ -40,5 +43,15 @@ module flowx_clmm::test_utils {
     #[test_only]
     public fun expand_to_9_decimals(n: u64): u64 {
         n * (pow(10, 9) as u64)
+    }
+
+    #[test_only]
+    public fun get_min_tick(tick_spacing: u32): I32 {
+        i32::mul(i32::div(tick_math::min_tick(), i32::from(tick_spacing)), i32::from(tick_spacing))
+    }
+
+    #[test_only]
+    public fun get_max_tick(tick_spacing: u32): I32 {
+        i32::mul(i32::div(tick_math::max_tick(), i32::from(tick_spacing)), i32::from(tick_spacing))
     }
 }

@@ -1,4 +1,4 @@
-module flowx_clmm::position_mamanger {
+module flowx_clmm::position_manager {
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
     use sui::balance;
@@ -309,5 +309,31 @@ module flowx_clmm::position_mamanger {
         
         let (collectd_x, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
         (coin::from_balance(collectd_x, ctx), coin::from_balance(collectd_y, ctx))
+    }
+
+    #[test_only]
+    public fun create_for_testing(ctx: &mut TxContext): PositionRegistry {
+        PositionRegistry {
+            id: object::new(ctx),
+            num_positions: 0
+        }
+    }
+
+    #[test_only]
+    public fun destroy_for_testing(position_registry: PositionRegistry) {
+        let PositionRegistry { id, num_positions: _ } = position_registry;
+        object::delete(id);
+    }
+
+    #[test_only]
+    public fun open_for_testing(
+        position_registry: &mut PositionRegistry,
+        pool_registry: &PoolRegistry,
+        fee_rate: u64,
+        tick_lower_index: I32,
+        tick_upper_index: I32,
+        ctx: &mut TxContext
+    ): Position {
+        open_position_(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
     }
 }

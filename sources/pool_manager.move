@@ -18,6 +18,7 @@ module flowx_clmm::pool_manager {
     const E_TICK_SPACING_OVERFLOW: u64 = 3;
     const E_FEE_RATE_ALREADY_ENABLED: u64 = 4;
     const E_POOL_NOT_CREATED: u64 = 5;
+    const E_FEE_RATE_NOT_ENABLED: u64 = 6;
 
     struct PoolDfKey has copy, drop, store {
         coin_type_x: TypeName,
@@ -47,11 +48,17 @@ module flowx_clmm::pool_manager {
     }
 
     fun init(ctx: &mut TxContext) {
-        transfer::share_object(PoolRegistry {
+        let pool_registry = PoolRegistry {
             id: object::new(ctx),
             fee_amount_tick_spacing: table::new(ctx),
             num_pools: 0
-        });
+        };
+        enable_fee_rate_internal(&mut pool_registry, 100, 2, ctx);
+        enable_fee_rate_internal(&mut pool_registry, 500, 10, ctx);
+        enable_fee_rate_internal(&mut pool_registry, 3000, 60, ctx);
+        enable_fee_rate_internal(&mut pool_registry, 10000, 200, ctx);
+
+        transfer::share_object(pool_registry);
     }
     
     fun pool_key<X, Y>(fee_rate: u64): PoolDfKey {
@@ -108,6 +115,9 @@ module flowx_clmm::pool_manager {
         ctx: &mut TxContext
     ) {
         versioned::check_version_and_upgrade(versioned);
+        if (!table::contains(&self.fee_amount_tick_spacing, fee_rate)) {
+            abort E_FEE_RATE_NOT_ENABLED
+        };
         if (utils::is_ordered<X, Y>()) {
             create_pool_<X, Y>(self, fee_rate, ctx);
         } else {
@@ -125,9 +135,9 @@ module flowx_clmm::pool_manager {
     ) {
         create_pool<X, Y>(self, fee_rate, versioned, ctx);
         if (utils::is_ordered<X, Y>()) {
-            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, clock);
+            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, clock, ctx);
         } else {
-            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, clock);
+            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, clock, ctx);
         };
     }
 
@@ -144,19 +154,153 @@ module flowx_clmm::pool_manager {
             abort E_INVALID_FEE_RATE
         };
 
-        if (tick_spacing >= 4194304) {
+        if (tick_spacing == 0 || tick_spacing >= 4194304) {
             abort E_TICK_SPACING_OVERFLOW
         };
 
         if (table::contains(&self.fee_amount_tick_spacing, fee_rate)) {
             abort E_FEE_RATE_ALREADY_ENABLED
         };
+        enable_fee_rate_internal(self, fee_rate, tick_spacing, ctx);
+    }
 
+    fun enable_fee_rate_internal(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        tick_spacing: u32,
+        ctx: &TxContext
+    ) {
         table::add(&mut self.fee_amount_tick_spacing, fee_rate, tick_spacing);
         event::emit(FeeRateEnabled {
             sender: tx_context::sender(ctx),
             fee_rate,
             tick_spacing
         });
+    }
+
+    #[test_only]
+    public fun create_for_testing(ctx: &mut TxContext): PoolRegistry {
+        PoolRegistry {
+            id: object::new(ctx),
+            fee_amount_tick_spacing: table::new(ctx),
+            num_pools: 0
+        }
+    }
+
+    #[test_only]
+    public fun destroy_for_testing(pool_registry: PoolRegistry) {
+        let PoolRegistry { id, fee_amount_tick_spacing, num_pools: _} = pool_registry;
+        object::delete(id);
+        table::drop(fee_amount_tick_spacing);
+    }
+
+    #[test_only] 
+    public fun enable_fee_rate_for_testing(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        tick_spacing: u32
+    ) {
+        table::add(&mut self.fee_amount_tick_spacing, fee_rate, tick_spacing);
+    }
+}
+
+#[test_only]
+module flowx_clmm::test_pool_manager {
+    use sui::tx_context;
+    use sui::sui::SUI;
+
+    use flowx_clmm::i32;
+    use flowx_clmm::versioned;
+    use flowx_clmm::pool_manager;
+    use flowx_clmm::pool;
+
+    struct USDC has drop {}
+
+    #[test]
+    fun test_create_pool() {
+        //succeeds if fee amount is enabled
+        let ctx = tx_context::dummy();
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+
+        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+        assert!(
+            pool::coin_type_x(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<USDC>() &&
+            pool::coin_type_y(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<SUI>() &&
+            pool::sqrt_price_current(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 0 &&
+            i32::eq(pool::tick_index_current(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)), i32::zero()) &&
+            pool::observation_index(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 0 &&
+            pool::observation_cardinality(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 0 &&
+            pool::observation_cardinality_next(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 0 &&
+            pool::tick_spacing(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 2 &&
+            pool::swap_fee_rate(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 100 &&
+            pool::is_locked(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)),
+            0
+        );
+
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+    }
+
+    #[test]
+    fun test_create_and_initialize_pool() {
+        use sui::clock;
+        //succeeds if fee amount is enabled
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+
+        pool_manager::create_and_initialize_pool<SUI, USDC>(
+            &mut pool_registry, 100, 1844674407370955161, &mut versioned, &clock, &mut ctx
+        );
+        assert!(
+            pool::coin_type_x(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<USDC>() &&
+            pool::coin_type_y(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<SUI>() &&
+            pool::sqrt_price_current(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 1844674407370955161 &&
+            i32::eq(pool::tick_index_current(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)), i32::neg_from(46055)) &&
+            pool::observation_index(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 0 &&
+            pool::observation_cardinality(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 1 &&
+            pool::observation_cardinality_next(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 1 &&
+            pool::tick_spacing(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 2 &&
+            pool::swap_fee_rate(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == 100 &&
+            !pool::is_locked(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)),
+            0
+        );
+
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = flowx_clmm::pool_manager::E_FEE_RATE_NOT_ENABLED)]
+    fun test_create_pool_fail_if_fee_amount_is_not_enabled() {
+        //fails if fee amount is not enabled
+        let ctx = tx_context::dummy();
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+
+        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = flowx_clmm::utils::E_IDENTICAL_COIN)]
+    fun test_create_pool_fail_if_x_and_y_are_identical() {
+        //fails if x and y are indentical
+        let ctx = tx_context::dummy();
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+
+        pool_manager::create_pool<SUI, SUI>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
     }
 }
