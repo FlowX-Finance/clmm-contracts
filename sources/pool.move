@@ -395,7 +395,7 @@ module flowx_clmm::pool {
             } else {
                 full_math_u128::min(step.sqrt_price_next, sqrt_price_limit)
             };
-    
+
             let (sqrt_price, amount_in, amount_out, fee_amount) = swap_math::compute_swap_step(
                 state.sqrt_price,
                 sqrt_price_target,
@@ -1359,25 +1359,6 @@ module flowx_clmm::test_pool {
         versioned::destroy_for_testing(versioned);
     }
 
-    #[test_only]
-    fun swap_to_lower_price<X, Y>(pool: &mut Pool<X, Y>, sqrt_price: u128, versioned: &mut Versioned) {
-        let (x_out, y_out, receipt) = pool::swap(pool, true, true, constants::get_max_u64(), sqrt_price, versioned, &tx_context::dummy());
-        balance::destroy_for_testing(x_out);
-        balance::destroy_for_testing(y_out);
-
-        let (amount_x_debt, _) = pool::receipt_debts(&receipt);
-        pool::pay(pool, receipt, balance::create_for_testing(amount_x_debt), balance::zero(), versioned);
-    }
-
-    #[test_only]
-    fun swap_to_higher_price<X, Y>(pool: &mut Pool<X, Y>, sqrt_price: u128, versioned: &mut Versioned) {
-        let (x_out, y_out, receipt) = pool::swap(pool, false, true, constants::get_max_u64(), sqrt_price, versioned, &tx_context::dummy());
-        balance::destroy_for_testing(x_out);
-        balance::destroy_for_testing(y_out);
-
-        let (_, amount_y_debt) = pool::receipt_debts(&receipt);
-        pool::pay(pool, receipt, balance::zero(), balance::create_for_testing(amount_y_debt), versioned);
-    }
 
     #[test]
     fun test_remove_liquidity(){
@@ -1503,6 +1484,7 @@ module flowx_clmm::test_pool {
         starting_price: u128,
         positions: vector<PositionTestCase>,
         swap_test_cases: vector<SwapTestCase>,
+        hint: u64,
     }
 
     struct SwapTestCase has copy, drop, store {
@@ -1524,6 +1506,7 @@ module flowx_clmm::test_pool {
                 fee_rate: 500,
                 tick_spacing: 10,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 488123048,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: test_utils::get_min_tick(10),
@@ -1532,46 +1515,46 @@ module flowx_clmm::test_pool {
                     }
                 ],
                 swap_test_cases: vector<SwapTestCase> [
-                    // SwapTestCase {
-                    //     x_for_y: true,
-                    //     exact_in: true,
-                    //     amount_x: test_utils::expand_to_9_decimals(1),
-                    //     amount_y: 0,
-                    //     sqrt_price_limit: tick_math::min_sqrt_price() + 1,
-                    //     amount_x_out: 0,
-                    //     amount_y_out: 666444406,
-                    //     sqrt_price_after: 12299879366966330045
-                    // },
-                    // SwapTestCase {
-                    //     x_for_y: false,
-                    //     exact_in: true,
-                    //     amount_x: 0,
-                    //     amount_y: test_utils::expand_to_9_decimals(1),
-                    //     sqrt_price_limit: tick_math::max_sqrt_price() - 1,
-                    //     amount_x_out: 666444405,
-                    //     amount_y_out: 0,
-                    //     sqrt_price_after: 27665504414910427430
-                    // },
-                    // SwapTestCase {
-                    //     x_for_y: true,
-                    //     exact_in: false,
-                    //     amount_x: 2001000510,
-                    //     amount_y: test_utils::expand_to_9_decimals(1),
-                    //     sqrt_price_limit: tick_math::min_sqrt_price() + 1,
-                    //     amount_x_out: 0,
-                    //     amount_y_out: test_utils::expand_to_9_decimals(1),
-                    //     sqrt_price_after: 9223372019252014507
-                    // },
-                    // SwapTestCase {
-                    //     x_for_y: false,
-                    //     exact_in: false,
-                    //     amount_x: test_utils::expand_to_9_decimals(1),
-                    //     amount_y: 2001000508,
-                    //     sqrt_price_limit: tick_math::max_sqrt_price() - 1,
-                    //     amount_x_out: test_utils::expand_to_9_decimals(1),
-                    //     amount_y_out: 0,
-                    //     sqrt_price_after: 36893488189460835287
-                    // }
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 666444406,
+                        sqrt_price_after: 12299879366966330045
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 666444405,
+                        amount_y_out: 0,
+                        sqrt_price_after: 27665504414910427430
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 2001000510,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_after: 9223372019252014507
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 2001000508,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: test_utils::expand_to_9_decimals(1),
+                        amount_y_out: 0,
+                        sqrt_price_after: 36893488189460835287
+                    }
                 ]
             },
             //medium fee, 10:1 price, 2e9 max range liquidity
@@ -1579,6 +1562,7 @@ module flowx_clmm::test_pool {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(10, 1),
+                hint: 367096991,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: test_utils::get_min_tick(60),
@@ -1634,6 +1618,7 @@ module flowx_clmm::test_pool {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(1, 10),
+                hint: 290962043,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: test_utils::get_min_tick(60),
@@ -1641,13 +1626,35 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 86123526,
+                        sqrt_price_after: 5039023340429007161
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 3869747611,
+                        amount_y_out: 0,
+                        sqrt_price_after: 15029074582521877101
+                    },
+                ]
             },
             //medium fee, 1:1 price, 0 liquidity, all liquidity around current price
             PoolTestcase {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 682806233,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: test_utils::get_min_tick(60),
@@ -1660,13 +1667,55 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 662011820,
+                        sqrt_price_after: 12285508213010972842
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 662011820,
+                        amount_y_out: 0,
+                        sqrt_price_after: 27697866544955972927
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 2024171065,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_after: 9168117490573172071
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 2024171065,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: test_utils::expand_to_9_decimals(1),
+                        amount_y_out: 0,
+                        sqrt_price_after: 37115838368217148729
+                    }
+                ]
             },
             //medium fee, 1:1 price, additional liquidity around current price
             PoolTestcase {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 594493098,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: test_utils::get_min_tick(60),
@@ -1684,13 +1733,55 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 795933703,
+                        sqrt_price_after: 14748520462876101118
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 795933703,
+                        amount_y_out: 0,
+                        sqrt_price_after: 23072305305299768375
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 1342022155,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_after: 13807430777936327093
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 1342022155,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: test_utils::expand_to_9_decimals(1),
+                        amount_y_out: 0,
+                        sqrt_price_after: 24644872199156331270
+                    }
+                ]
             },
             //low fee, large liquidity around current price (stable swap)
             PoolTestcase {
                 fee_rate: 500,
                 tick_spacing: 10,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 690401096,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: i32::neg_from(10),
@@ -1698,13 +1789,55 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 999700,
+                        sqrt_price_after: 4295048017
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 999700,
+                        amount_y_out: 0,
+                        sqrt_price_after: 79226673515401279992447579054
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 1000701,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 999700,
+                        sqrt_price_after: 4295048017
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 1000701,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 999700,
+                        amount_y_out: 0,
+                        sqrt_price_after: 79226673515401279992447579054
+                    }
+                ]
             },
-            //medium fee, token0 liquidity only
+            // medium fee, token0 liquidity only
             PoolTestcase {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 522562707,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: i32::zero(),
@@ -1712,13 +1845,55 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 0,
+                        sqrt_price_after: 4295048017
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 665331998,
+                        amount_y_out: 0,
+                        sqrt_price_after: 27642445994453763096
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 0,
+                        sqrt_price_after: 4295048017
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 2006018054,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: test_utils::expand_to_9_decimals(1),
+                        amount_y_out: 0,
+                        sqrt_price_after: 36893488147419103232
+                    }
+                ]
             },
             //medium fee, token1 liquidity only
             PoolTestcase {
                 fee_rate: 3000,
                 tick_spacing: 60,
                 starting_price: test_utils::encode_sqrt_price(1, 1),
+                hint: 108340506,
                 positions: vector<PositionTestCase> [
                     PositionTestCase {
                         tick_lower_index: i32::neg_from(60 * 2000),
@@ -1726,7 +1901,48 @@ module flowx_clmm::test_pool {
                         liquidity: (test_utils::expand_to_9_decimals(2) as u128)
                     }
                 ],
-                swap_test_cases: vector<SwapTestCase> []
+                swap_test_cases: vector<SwapTestCase> [
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: true,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: 665331998,
+                        sqrt_price_after: 12310139521995029441
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: true,
+                        amount_x: 0,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 0,
+                        amount_y_out: 0,
+                        sqrt_price_after: 79226673515401279992447579054
+                    },
+                    SwapTestCase {
+                        x_for_y: true,
+                        exact_in: false,
+                        amount_x: 2006018054,
+                        amount_y: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_limit: tick_math::min_sqrt_price() + 1,
+                        amount_x_out: 0,
+                        amount_y_out: test_utils::expand_to_9_decimals(1),
+                        sqrt_price_after: 9223372036854775808
+                    },
+                    SwapTestCase {
+                        x_for_y: false,
+                        exact_in: false,
+                        amount_x: test_utils::expand_to_9_decimals(1),
+                        amount_y: 0,
+                        sqrt_price_limit: tick_math::max_sqrt_price() - 1,
+                        amount_x_out: 0,
+                        amount_y_out: 0,
+                        sqrt_price_after: 79226673515401279992447579054
+                    }
+                ]
             },
         ];
 
@@ -1735,7 +1951,9 @@ module flowx_clmm::test_pool {
             let pool_test_case = vector::borrow(&test_pools, i);
             let (j, num_tests) = (0, vector::length(&pool_test_case.swap_test_cases));
             while(j < num_tests) {
-                let ctx = tx_context::new_from_hint(@0x0, i + j, i, i, i);
+                let ctx = tx_context::new_from_hint(
+                    @0x0, pool_test_case.hint + j, i + j, j + i, i + j
+                );
                 let clock = clock::create_for_testing(&mut ctx);
                 let versioned = versioned::create_for_testing(&mut ctx);
 
@@ -1780,6 +1998,7 @@ module flowx_clmm::test_pool {
                         swap_test_case.amount_x
                     }
                 };
+
                 let (x_out, y_out, receipt) = pool::swap(
                     &mut pool, swap_test_case.x_for_y, swap_test_case.exact_in, amount_specified,
                     swap_test_case.sqrt_price_limit, &mut versioned, &ctx

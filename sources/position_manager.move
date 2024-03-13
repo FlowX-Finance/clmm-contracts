@@ -326,7 +326,7 @@ module flowx_clmm::position_manager {
     }
 
     #[test_only]
-    public fun open_for_testing(
+    public fun open_for_testing<X, Y>(
         position_registry: &mut PositionRegistry,
         pool_registry: &PoolRegistry,
         fee_rate: u64,
@@ -334,6 +334,56 @@ module flowx_clmm::position_manager {
         tick_upper_index: I32,
         ctx: &mut TxContext
     ): Position {
-        open_position_(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
+        open_position_<X, Y>(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
+    }
+}
+
+#[test_only]
+module flowx_clmm::test_position_manager {
+    use sui::tx_context;
+    use sui::clock;
+    use sui::coin;
+
+    use flowx_clmm::i32;
+    use flowx_clmm::versioned;
+    use flowx_clmm::pool_manager;
+    use flowx_clmm::position_manager;
+    use flowx_clmm::position;
+
+    struct USDT has drop {}
+    struct USDC has drop {}
+
+    #[test]
+    fun test_increase_liquidy() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        let position_registry = position_manager::create_for_testing(&mut ctx);
+
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+
+        pool_manager::create_and_initialize_pool<USDC, USDT>(&mut pool_registry, 100, 26085264023904338587, &mut versioned, &clock, &mut ctx);
+        let position = position_manager::open_for_testing<USDC, USDT>(
+            &mut position_registry, &pool_registry, 100, i32::from(0), i32::from(6930), &mut ctx
+        );
+        position_manager::increase_liquidity<USDT, USDC>(
+            &mut pool_registry,
+            &mut position,
+            coin::mint_for_testing(1000000, &mut ctx),
+            coin::zero(&mut ctx),
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+        
+        position::destroy_for_testing(position);
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+        position_manager::destroy_for_testing(position_registry);
     }
 }

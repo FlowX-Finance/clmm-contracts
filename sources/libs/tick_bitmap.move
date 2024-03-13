@@ -94,7 +94,7 @@ module flowx_clmm::tick_bitmap {
             let masked = try_get_tick_word(self, word_pos) & mask;
 
             let _initialized = masked != 0;
-            
+
             let _next = if (_initialized) {
                 i32::mul(
                     i32::add(
