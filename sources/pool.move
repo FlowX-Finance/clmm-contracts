@@ -69,6 +69,8 @@ module flowx_clmm::pool {
         ticks: Table<I32, TickInfo>,
         tick_bitmap: Table<I32, u256>,
         observations: vector<Observation>,
+        reserve_x: Balance<CoinX>,
+        reserve_y: Balance<CoinY>,
         locked: bool
     }
 
@@ -225,10 +227,7 @@ module flowx_clmm::pool {
     public fun is_locked<X, Y>(self: &Pool<X, Y>): bool { self.locked }
 
     public fun reserves<X, Y>(self: &Pool<X, Y>): (u64, u64) {
-        (
-            balance::value(df::borrow<ReserveDfKey<X>, Balance<X>>(&self.id, ReserveDfKey<X> {})),
-            balance::value(df::borrow<ReserveDfKey<Y>, Balance<Y>>(&self.id, ReserveDfKey<Y> {}))
-        )
+        (balance::value(&self.reserve_x), balance::value(&self.reserve_y))
     }
 
     public fun swap_receipt_debts(receipt: &SwapReceipt): (u64, u64) { (receipt.amount_x_debt, receipt.amount_y_debt) }
@@ -263,10 +262,10 @@ module flowx_clmm::pool {
             observation_cardinality: 0,
             observation_cardinality_next: 0,
             observations: vector::empty(),
+            reserve_x: balance::zero(),
+            reserve_y: balance::zero(),
             locked: true
         };
-        df::add(&mut pool.id, ReserveDfKey<X> {}, balance::zero<X>());
-        df::add(&mut pool.id, ReserveDfKey<Y> {}, balance::zero<Y>());
         pool
     }
 
@@ -1101,8 +1100,8 @@ module flowx_clmm::pool {
         amount_y: u64
     ): (Balance<X>, Balance<Y>) {
         (
-            balance::split(df::borrow_mut<ReserveDfKey<X>, Balance<X>>(&mut self.id, ReserveDfKey<X> {}), amount_x),
-            balance::split(df::borrow_mut<ReserveDfKey<Y>, Balance<Y>>(&mut self.id, ReserveDfKey<Y> {}), amount_y),
+            balance::split(&mut self.reserve_x, amount_x),
+            balance::split(&mut self.reserve_y, amount_y),
         )
     }
 
@@ -1111,8 +1110,8 @@ module flowx_clmm::pool {
         payment_x: Balance<X>,
         payment_y: Balance<Y>,
     ) {
-        balance::join(df::borrow_mut(&mut self.id, ReserveDfKey<X> {}), payment_x);
-        balance::join(df::borrow_mut(&mut self.id, ReserveDfKey<Y> {}), payment_y);
+        balance::join(&mut self.reserve_x, payment_x);
+        balance::join(&mut self.reserve_y, payment_y);
     }
 
     #[test_only]
@@ -1130,11 +1129,13 @@ module flowx_clmm::pool {
             id, coin_type_x: _, coin_type_y: _, sqrt_price: _, tick_index: _, observation_index: _, observation_cardinality: _,
             observation_cardinality_next: _, tick_spacing: _, max_liquidity_per_tick: _, protocol_fee_rate: _, swap_fee_rate: _,
             fee_growth_global_x: _, fee_growth_global_y: _, protocol_fee_x: _, protocol_fee_y: _, liquidity: _, ticks, tick_bitmap,
-            observations, locked: _
+            observations, reserve_x, reserve_y, locked: _
         } = pool;
         object::delete(id);
         table::drop(ticks);
         table::drop(tick_bitmap);
+        balance::destroy_for_testing(reserve_x);
+        balance::destroy_for_testing(reserve_y);
     }
 
     #[test_only]
