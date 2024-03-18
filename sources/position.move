@@ -12,11 +12,13 @@ module flowx_clmm::position {
     use flowx_clmm::full_math_u128;
     use flowx_clmm::constants;
     use flowx_clmm::liquidity_math;
+    use flowx_clmm::full_math_u64;
 
     friend flowx_clmm::pool;
     friend flowx_clmm::position_manager;
 
     const E_EMPTY_POSITION: u64 = 1;
+    const E_COINS_OWED_OVERFLOW: u64 = 1;
 
     struct POSITION has drop {}
 
@@ -128,15 +130,28 @@ module flowx_clmm::position {
         };
 
         let coins_owed_x = full_math_u128::mul_div_floor(
-            fee_growth_inside_x - self.fee_growth_inside_x_last,
+            full_math_u128::wrapping_sub(fee_growth_inside_x, self.fee_growth_inside_x_last),
             self.liquidity,
             constants::get_q64()
         );
         let coins_owed_y = full_math_u128::mul_div_floor(
-            fee_growth_inside_y - self.fee_growth_inside_y_last,
+            full_math_u128::wrapping_sub(fee_growth_inside_y, self.fee_growth_inside_y_last),
             self.liquidity,
             constants::get_q64()
         );
+        // std::debug::print(&fee_growth_inside_x);
+        // std::debug::print(&fee_growth_inside_y);
+
+        if (coins_owed_x > (constants::get_max_u64() as u128) || coins_owed_y > (constants::get_max_u64() as u128)) {
+            abort E_COINS_OWED_OVERFLOW;
+        };
+
+        if (
+            !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64)) ||
+            !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64))
+        ) {
+            abort E_COINS_OWED_OVERFLOW;
+        };
 
         self.liquidity = liquidity_next;
         self.fee_growth_inside_x_last = fee_growth_inside_x;

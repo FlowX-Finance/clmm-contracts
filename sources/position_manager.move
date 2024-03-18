@@ -191,8 +191,8 @@ module flowx_clmm::position_manager {
         if (utils::is_ordered<X, Y>()) {
             collect_<X, Y>(self, position, amount_x_requested, amount_y_requested, versioned, clock, ctx)
         } else {
-            let (collectd_y, collectd_x) = collect_<Y, X>(self, position, amount_y_requested, amount_x_requested, versioned, clock, ctx);
-            (collectd_x, collectd_y)
+            let (collectd_y, collected) = collect_<Y, X>(self, position, amount_y_requested, amount_x_requested, versioned, clock, ctx);
+            (collected, collectd_y)
         }
     }
 
@@ -307,8 +307,8 @@ module flowx_clmm::position_manager {
             );
         };
         
-        let (collectd_x, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
-        (coin::from_balance(collectd_x, ctx), coin::from_balance(collectd_y, ctx))
+        let (collected, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
+        (coin::from_balance(collected, ctx), coin::from_balance(collectd_y, ctx))
     }
 
     #[test_only]
@@ -352,6 +352,7 @@ module flowx_clmm::test_position_manager {
 
     struct USDT has drop {}
     struct USDC has drop {}
+    struct SCB has drop {}
 
     #[test]
     fun test_increase_liquidy() {
@@ -361,19 +362,19 @@ module flowx_clmm::test_position_manager {
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         let position_registry = position_manager::create_for_testing(&mut ctx);
 
-        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 500, 2);
 
-        pool_manager::create_and_initialize_pool<USDC, USDT>(&mut pool_registry, 100, 26085264023904338587, &mut versioned, &clock, &mut ctx);
-        let position = position_manager::open_for_testing<USDC, USDT>(
-            &mut position_registry, &pool_registry, 100, i32::from(0), i32::from(6930), &mut ctx
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, 500, 714731077133269, &mut versioned, &clock, &mut ctx);
+        let position = position_manager::open_for_testing<SCB, USDC>(
+            &mut position_registry, &pool_registry, 500, i32::neg_from(203870), i32::neg_from(202540), &mut ctx
         );
-        position_manager::increase_liquidity<USDT, USDC>(
+        position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
             &mut position,
-            coin::mint_for_testing(1000000, &mut ctx),
-            coin::zero(&mut ctx),
-            0,
-            0,
+            coin::mint_for_testing(10000000000000, &mut ctx),
+            coin::mint_for_testing(16165, &mut ctx),
+            9950000000000,
+            16084,
             1000,
             &mut versioned,
             &clock,

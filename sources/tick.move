@@ -2,10 +2,12 @@ module flowx_clmm::tick {
     use sui::table::{Self, Table};
 
     use flowx_clmm::i32::{Self, I32};
+    use flowx_clmm::i64::{Self, I64};
     use flowx_clmm::i128::{Self, I128};
     use flowx_clmm::tick_math;
     use flowx_clmm::constants;
     use flowx_clmm::liquidity_math;
+    use flowx_clmm::full_math_u128;
 
     friend flowx_clmm::pool;
 
@@ -18,7 +20,10 @@ module flowx_clmm::tick {
         liquidity_gross: u128,
         liquidity_net: I128,
         fee_growth_outside_x: u128,
-        fee_growth_outside_y: u128
+        fee_growth_outside_y: u128,
+        tick_cumulative_out_side: I64,
+        seconds_per_liquidity_out_side: u256,
+        seconds_out_side: u64
     }
 
     public fun check_ticks(tick_lower_index: I32, tick_upper_index: I32)  {
@@ -76,6 +81,42 @@ module flowx_clmm::tick {
         }
     }
 
+    public fun get_tick_cumulative_out_side(
+        self: &Table<I32, TickInfo>,
+        tick_index: I32
+    ): I64 {
+        if (!is_initialized(self, tick_index)) {
+            i64::zero()
+        } else {
+            let tick_info = table::borrow(self, tick_index);
+            tick_info.tick_cumulative_out_side
+        }
+    }
+
+    public fun get_seconds_per_liquidity_out_side(
+        self: &Table<I32, TickInfo>,
+        tick_index: I32
+    ): u256 {
+        if (!is_initialized(self, tick_index)) {
+            0
+        } else {
+            let tick_info = table::borrow(self, tick_index);
+            tick_info.seconds_per_liquidity_out_side
+        }
+    }
+
+    public fun get_seconds_out_side(
+        self: &Table<I32, TickInfo>,
+        tick_index: I32
+    ): u64 {
+        if (!is_initialized(self, tick_index)) {
+            0
+        } else {
+            let tick_info = table::borrow(self, tick_index);
+            tick_info.seconds_out_side
+        }
+    }
+
     fun try_borrow_mut_tick(
         self: &mut Table<I32, TickInfo>,
         tick_index: I32
@@ -85,7 +126,10 @@ module flowx_clmm::tick {
                 liquidity_gross: 0,
                 liquidity_net: i128::zero(),
                 fee_growth_outside_x: 0,
-                fee_growth_outside_y: 0
+                fee_growth_outside_y: 0,
+                seconds_per_liquidity_out_side: 0,
+                tick_cumulative_out_side: i64::zero(),
+                seconds_out_side: 0
             };
             table::add(self, tick_index, tick_info);
         };
@@ -112,12 +156,13 @@ module flowx_clmm::tick {
         let (lower_fee_growth_outside_x, lower_fee_growth_outside_y) = get_fee_growth_outside(self, tick_lower_index);
         let (upper_fee_growth_outside_x, upper_fee_growth_outside_y) = get_fee_growth_outside(self, tick_upper_index);
 
+        
         let (fee_growth_below_x, fee_growth_below_y) = if (i32::gte(tick_current_index, tick_lower_index)) {
             (lower_fee_growth_outside_x, lower_fee_growth_outside_y)
         } else {
             (
-                fee_growth_global_x - lower_fee_growth_outside_x,
-                fee_growth_global_y - lower_fee_growth_outside_y
+                full_math_u128::wrapping_sub(fee_growth_global_x, lower_fee_growth_outside_x),
+                full_math_u128::wrapping_sub(fee_growth_global_y, lower_fee_growth_outside_y)
             )
         };
 
@@ -125,14 +170,14 @@ module flowx_clmm::tick {
             (upper_fee_growth_outside_x, upper_fee_growth_outside_y)
         } else {
             (
-                fee_growth_global_x - upper_fee_growth_outside_x,
-                fee_growth_global_y - upper_fee_growth_outside_y
+                full_math_u128::wrapping_sub(fee_growth_global_x, upper_fee_growth_outside_x),
+                full_math_u128::wrapping_sub(fee_growth_global_y, upper_fee_growth_outside_y)
             )
         };
 
         (
-            fee_growth_global_x - fee_growth_below_x - fee_growth_above_x,
-            fee_growth_global_y - fee_growth_below_y - fee_growth_above_y
+            full_math_u128::wrapping_sub(full_math_u128::wrapping_sub(fee_growth_global_x, fee_growth_below_x), fee_growth_above_x),
+            full_math_u128::wrapping_sub(full_math_u128::wrapping_sub(fee_growth_global_y, fee_growth_below_y), fee_growth_above_y)
         )
     }
 
@@ -143,6 +188,9 @@ module flowx_clmm::tick {
         liquidity_delta: I128,
         fee_growth_global_x: u128,
         fee_growth_global_y: u128,
+        seconds_per_liquidity_cumulative: u256,
+        tick_cumulative: I64,
+        timestamp_s: u64,
         upper: bool,
         max_liquidity: u128
     ): bool {
@@ -160,6 +208,9 @@ module flowx_clmm::tick {
             if (i32::lte(tick_index, tick_current_index)) {
                 tick_info.fee_growth_outside_x = fee_growth_global_x;
                 tick_info.fee_growth_outside_y = fee_growth_global_y;
+                tick_info.seconds_per_liquidity_out_side = seconds_per_liquidity_cumulative;
+                tick_info.tick_cumulative_out_side = tick_cumulative;
+                tick_info.seconds_out_side = timestamp_s;
             };
         };
 
@@ -182,11 +233,17 @@ module flowx_clmm::tick {
         self: &mut Table<I32, TickInfo>,
         tick_index: I32,
         fee_growth_global_x: u128,
-        fee_growth_global_y: u128
+        fee_growth_global_y: u128,
+        seconds_per_liquidity_cumulative: u256,
+        tick_cumulative: I64,
+        timestamp_s: u64,
     ): I128 {
         let tick_info = try_borrow_mut_tick(self, tick_index);
         tick_info.fee_growth_outside_x = fee_growth_global_x - tick_info.fee_growth_outside_x;
         tick_info.fee_growth_outside_y = fee_growth_global_y - tick_info.fee_growth_outside_y;
+        tick_info.seconds_per_liquidity_out_side = seconds_per_liquidity_cumulative - tick_info.seconds_per_liquidity_out_side;
+        tick_info.tick_cumulative_out_side = i64::sub(tick_cumulative, tick_info.tick_cumulative_out_side);
+        tick_info.seconds_out_side = timestamp_s - tick_info.seconds_out_side;
         tick_info.liquidity_net
     }
 
@@ -237,7 +294,10 @@ module flowx_clmm::tick {
             liquidity_gross: 0,
             liquidity_net: i128::zero(),
             fee_growth_outside_x: 2,
-            fee_growth_outside_y: 3
+            fee_growth_outside_y: 3,
+            seconds_per_liquidity_out_side: 0,
+            tick_cumulative_out_side: i64::zero(),
+            seconds_out_side: 0
         });
         let (fee_growth_inside_x, fee_growth_inside_y) 
             = get_fee_growth_inside(&ticks, i32::neg_from(2), i32::from(2), i32::zero(), 15, 15);
@@ -248,7 +308,10 @@ module flowx_clmm::tick {
             liquidity_gross: 0,
             liquidity_net: i128::zero(),
             fee_growth_outside_x: 2,
-            fee_growth_outside_y: 3
+            fee_growth_outside_y: 3,
+            seconds_per_liquidity_out_side: 0,
+            tick_cumulative_out_side: i64::zero(),
+            seconds_out_side: 0
         });
         let (fee_growth_inside_x, fee_growth_inside_y) 
             = get_fee_growth_inside(&ticks, i32::neg_from(2), i32::from(2), i32::zero(), 15, 15);
@@ -267,30 +330,30 @@ module flowx_clmm::tick {
         let ticks = table::new<I32, TickInfo>(&mut tx_context::dummy());
         
         //flips from zero to nonzero
-        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, false, 3) == true, 0);
+        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, 0, i64::zero(), 0, false, 3) == true, 0);
 
         //does not flip from nonzero to greater nonzero
-        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, false, 3) == false, 0);
+        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, 0, i64::zero(), 0, false, 3) == false, 0);
 
         //flips from nonzero to zero
-        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::neg_from(2), 0, 0, false, 3) == true, 0);
+        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::neg_from(2), 0, 0, 0, i64::zero(), 0, false, 3) == true, 0);
 
         //does not flip from nonzero to lesser nonzero
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, false, 3);
-        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::neg_from(1), 0, 0, false, 3) == false, 0);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, 0, i64::zero(), 0, false, 3);
+        assert!(update(&mut ticks, i32::from(0), i32::from(0), i128::neg_from(1), 0, 0, 0, i64::zero(), 0, false, 3) == false, 0);
 
         //nets the liquidity based on upper flag
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, false, 10);
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, true, 10);
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(3), 0, 0, true, 10);
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, false, 10);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, 0, i64::zero(), 0, false, 10);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, 0, i64::zero(), 0, true, 10);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(3), 0, 0, 0, i64::zero(), 0, true, 10);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, 0, i64::zero(), 0, false, 10);
 
         let (liquidity_gross, liquidity_net) = (get_liquidity_gross(&ticks, i32::from(0)), get_liquidity_net(&ticks, i32::from(0)));
         assert!(liquidity_gross == (1 + 2 + 1 + 3 + 1), 0);
         assert!(i128::eq(liquidity_net, i128::zero()), 0);
 
         //assumes all growth happens below ticks lte current tick
-        update(&mut ticks, i32::from(1), i32::from(1), i128::from(1), 1, 2, false, 10);
+        update(&mut ticks, i32::from(1), i32::from(1), i128::from(1), 1, 2, 0, i64::zero(), 0, false, 10);
         assert!(is_initialized(&ticks, i32::from(1)), 0);
         let (liquidity_gross, liquidity_net) = (get_liquidity_gross(&ticks, i32::from(0)), get_liquidity_net(&ticks, i32::from(0)));
         let (fee_growth_outside_x, fee_growth_outside_y) = get_fee_growth_outside(&ticks, i32::from(1));
@@ -299,12 +362,12 @@ module flowx_clmm::tick {
         assert!(fee_growth_outside_x == 1 && fee_growth_outside_y == 2, 0);
 
         //does not set any growth fields if tick is already initialized
-        update(&mut ticks, i32::from(1), i32::from(1), i128::from(1), 6, 7, false, 10);
+        update(&mut ticks, i32::from(1), i32::from(1), i128::from(1), 6, 7, 0, i64::zero(), 0, false, 10);
         let (fee_growth_outside_x, fee_growth_outside_y) = get_fee_growth_outside(&ticks, i32::from(1));
         assert!(fee_growth_outside_x == 1 && fee_growth_outside_y == 2, 0);
 
         //does not set any growth fields for ticks gt current tick
-        update(&mut ticks, i32::from(2), i32::from(1), i128::from(1), 1, 2, false, 10);
+        update(&mut ticks, i32::from(2), i32::from(1), i128::from(1), 1, 2, 0, i64::zero(), 0, false, 10);
         let (liquidity_gross, liquidity_net) = (get_liquidity_gross(&ticks, i32::from(2)), get_liquidity_net(&ticks, i32::from(2)));
         let (fee_growth_outside_x, fee_growth_outside_y) = get_fee_growth_outside(&ticks, i32::from(2));
         assert!(liquidity_gross == 1, 0);
@@ -324,9 +387,9 @@ module flowx_clmm::tick {
 
         let ticks = table::new<I32, TickInfo>(&mut tx_context::dummy());
 
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, false, 3);
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, true, 3);
-        update(&mut ticks, i32::from(0), i32::from(0), i128::from(3), 0, 0, true, 3);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(2), 0, 0, 0, i64::zero(), 0, false, 3);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(1), 0, 0, 0, i64::zero(), 0, true, 3);
+        update(&mut ticks, i32::from(0), i32::from(0), i128::from(3), 0, 0, 0, i64::zero(), 0, true, 3);
         
         table::drop(ticks);
     }
@@ -345,23 +408,41 @@ module flowx_clmm::tick {
             liquidity_gross: 1,
             liquidity_net: i128::from(2),
             fee_growth_outside_x: 3,
-            fee_growth_outside_y: 4
+            fee_growth_outside_y: 4,
+            seconds_per_liquidity_out_side: 5,
+            tick_cumulative_out_side: i64::from(6),
+            seconds_out_side: 7
         });
-        assert!(i128::eq(cross(&mut ticks, i32::from(2), 5, 7), i128::from(2)), 0);
+        assert!(i128::eq(cross(&mut ticks, i32::from(2), 5, 7, 8, i64::from(15), 10), i128::from(2)), 0);
         let (fee_growth_outside_x, fee_growth_outside_y) = get_fee_growth_outside(&ticks, i32::from(2));
-        assert!(fee_growth_outside_x == 2 && fee_growth_outside_y == 3, 0);
+        let (seconds_per_liquidity_out_side, tick_cumulative_out_side, seconds_out_side) =
+            (get_seconds_per_liquidity_out_side(&ticks, i32::from(2)), get_tick_cumulative_out_side(&ticks, i32::from(2)), get_seconds_out_side(&ticks, i32::from(2)));
+        assert!(
+            fee_growth_outside_x == 2 && fee_growth_outside_y == 3 && seconds_per_liquidity_out_side == 3 &&
+            i64::eq(tick_cumulative_out_side, i64::from(9)) && seconds_out_side == 3,
+            0
+        );
 
         //two flips are no op
         table::add(&mut ticks, i32::from(3), TickInfo {
             liquidity_gross: 3,
             liquidity_net: i128::from(4),
             fee_growth_outside_x: 1,
-            fee_growth_outside_y: 2
+            fee_growth_outside_y: 2,
+            seconds_per_liquidity_out_side: 5,
+            tick_cumulative_out_side: i64::from(6),
+            seconds_out_side: 7
         });
-        assert!(i128::eq(cross(&mut ticks, i32::from(3), 5, 7), i128::from(4)), 0);
-        assert!(i128::eq(cross(&mut ticks, i32::from(3), 5, 7), i128::from(4)), 0);
+        assert!(i128::eq(cross(&mut ticks, i32::from(3), 5, 7, 8, i64::from(15), 10), i128::from(4)), 0);
+        assert!(i128::eq(cross(&mut ticks, i32::from(3), 5, 7, 8, i64::from(15), 10), i128::from(4)), 0);
         let (fee_growth_outside_x, fee_growth_outside_y) = get_fee_growth_outside(&ticks, i32::from(3));
-        assert!(fee_growth_outside_x == 1 && fee_growth_outside_y == 2, 0);
+        let (seconds_per_liquidity_out_side, tick_cumulative_out_side, seconds_out_side) =
+            (get_seconds_per_liquidity_out_side(&ticks, i32::from(3)), get_tick_cumulative_out_side(&ticks, i32::from(3)), get_seconds_out_side(&ticks, i32::from(3)));
+        assert!(
+            fee_growth_outside_x == 1 && fee_growth_outside_y == 2 && seconds_per_liquidity_out_side == 5 &&
+            i64::eq(tick_cumulative_out_side, i64::from(6)) && seconds_out_side == 7,
+            0
+        );
 
         table::drop(ticks);
     }

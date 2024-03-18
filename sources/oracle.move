@@ -116,7 +116,7 @@ module flowx_clmm::oracle {
         };
 
         if (next <= current) {
-            return 0
+            return current
         };
 
         while(current < next) {
@@ -145,7 +145,6 @@ module flowx_clmm::oracle {
 
     public fun binary_search(
         self: &vector<Observation>,
-        time: u64,
         target: u64,
         index: u64,
         cardinality: u64
@@ -184,7 +183,6 @@ module flowx_clmm::oracle {
 
     public fun get_surrounding_observations(
         self: &vector<Observation>,
-        time: u64,
         target: u64,
         tick_index: I32,
         index: u64,
@@ -211,7 +209,7 @@ module flowx_clmm::oracle {
             abort E_OLDEST_OBSERVATION
         };
         
-        binary_search(self, time, target, index, cardinality)
+        binary_search(self, target, index, cardinality)
     }
 
     public fun observe_single(
@@ -235,7 +233,7 @@ module flowx_clmm::oracle {
         let target = time - seconds_ago;
         
         let (before_or_at, at_or_after) = get_surrounding_observations(
-            self, time, target, tick_index, index, liquidity, cardinality
+            self, target, tick_index, index, liquidity, cardinality
         );
 
         if (target == before_or_at.timestamp_s) {

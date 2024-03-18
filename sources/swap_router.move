@@ -19,13 +19,14 @@ module flowx_clmm::swap_router {
         coin_in: Coin<X>,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &TxContext
     ): Balance<Y> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool, true, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, true), versioned, ctx
+            pool, true, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, true), versioned, clock, ctx
         );
         balance::destroy_zero(x_out);
-        pool::pay(pool, receipt, coin::into_balance(coin_in), balance::zero(), versioned);
+        pool::pay(pool, receipt, coin::into_balance(coin_in), balance::zero(), versioned, ctx);
 
         y_out
     }
@@ -35,13 +36,14 @@ module flowx_clmm::swap_router {
         coin_in: Coin<Y>,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &TxContext
     ): Balance<X> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool, false, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, false), versioned, ctx
+            pool, false, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, false), versioned, clock, ctx
         );
         balance::destroy_zero(y_out);
-        pool::pay(pool, receipt, balance::zero(), coin::into_balance(coin_in), versioned);
+        pool::pay(pool, receipt, balance::zero(), coin::into_balance(coin_in), versioned, ctx);
 
         x_out
     }
@@ -64,6 +66,7 @@ module flowx_clmm::swap_router {
                 coin_in,
                 sqrt_price_limit,
                 versioned,
+                clock,
                 ctx
             )
         } else {
@@ -72,6 +75,7 @@ module flowx_clmm::swap_router {
                 coin_in,
                 sqrt_price_limit,
                 versioned,
+                clock,
                 ctx
             )
         };
@@ -89,20 +93,21 @@ module flowx_clmm::swap_router {
         amount_y_out: u64,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &mut TxContext
     ): Balance<Y> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool, true, false, amount_y_out, get_sqrt_price_limit(sqrt_price_limit, true), versioned, ctx
+            pool, true, false, amount_y_out, get_sqrt_price_limit(sqrt_price_limit, true), versioned, clock, ctx
         );
         balance::destroy_zero(x_out);
 
-        let (amount_in_required, _) = pool::receipt_debts(&receipt);
+        let (amount_in_required, _) = pool::swap_receipt_debts(&receipt);
         if (amount_in_required > coin::value(&coin_in)) {
             abort E_EXCESSIVE_INPUT_AMOUNT
         };
 
         pool::pay(
-            pool, receipt, coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), balance::zero(), versioned
+            pool, receipt, coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), balance::zero(), versioned, ctx
         );
         refund(coin_in, tx_context::sender(ctx));
     
@@ -115,20 +120,21 @@ module flowx_clmm::swap_router {
         amount_x_out: u64,
         sqrt_price_limit: u128,
         versioned: &mut Versioned,
+        clock: &Clock,
         ctx: &mut TxContext
     ): Balance<X> {
         let (x_out, y_out, receipt) = pool::swap(
-            pool, false, false, amount_x_out, get_sqrt_price_limit(sqrt_price_limit, false), versioned, ctx
+            pool, false, false, amount_x_out, get_sqrt_price_limit(sqrt_price_limit, false), versioned, clock, ctx
         );
         balance::destroy_zero(y_out);
 
-        let (_, amount_in_required) = pool::receipt_debts(&receipt);
+        let (_, amount_in_required) = pool::swap_receipt_debts(&receipt);
         if (amount_in_required > coin::value(&coin_in)) {
             abort E_EXCESSIVE_INPUT_AMOUNT
         };
 
         pool::pay(
-            pool, receipt, balance::zero(), coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), versioned
+            pool, receipt, balance::zero(), coin::into_balance(coin::split(&mut coin_in, amount_in_required, ctx)), versioned, ctx
         );
         refund(coin_in, tx_context::sender(ctx));
 
@@ -155,6 +161,7 @@ module flowx_clmm::swap_router {
                 amount_out,
                 sqrt_price_limit,
                 versioned,
+                clock,
                 ctx
             )
         } else {
@@ -164,6 +171,7 @@ module flowx_clmm::swap_router {
                 amount_out,
                 sqrt_price_limit,
                 versioned,
+                clock,
                 ctx
             )
         };
