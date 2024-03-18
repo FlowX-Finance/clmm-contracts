@@ -5,7 +5,6 @@ module flowx_clmm::pool {
     use sui::tx_context::{Self, TxContext};
     use sui::balance::{Self, Balance};
     use sui::table::{Self, Table};
-    use sui::dynamic_field::{Self as df};
     use sui::event;
     use sui::clock::{Self, Clock};
     
@@ -315,6 +314,8 @@ module flowx_clmm::pool {
         let (amount_x, amount_y) = modify_position(self, position, liquidity_delta, clock);
         if (add) {
             if (balance::value(&x_in) < amount_x || balance::value(&y_in) < amount_y) {
+                std::debug::print(&x_in);
+                std::debug::print(&y_in);
                 abort E_INSUFFICIENT_INPUT_AMOUNT
             };
         } else {
@@ -1397,6 +1398,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position0)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position0)),
             100,
+            true
         );
         let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position0, i128::from(100), balance::create_for_testing(amount_x),
@@ -1411,6 +1413,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position1)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position1)),
             250,
+            true
         );
         let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position1, i128::from(250), balance::create_for_testing(amount_x),
@@ -1446,6 +1449,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             100,
+            true
         );
         let (amount_x, amount_y) = pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(100), balance::create_for_testing(amount_x),
@@ -2256,6 +2260,7 @@ module flowx_clmm::test_pool {
                         tick_math::get_sqrt_price_at_tick(position_test_case.tick_lower_index),
                         tick_math::get_sqrt_price_at_tick(position_test_case.tick_upper_index),
                         position_test_case.liquidity,
+                        true
                     );
                     pool::modify_liquidity<SUI, USDC>(
                         &mut pool, &mut position, i128::from(position_test_case.liquidity), balance::create_for_testing(amount_x),
@@ -2903,6 +2908,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position0)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position0)),
             1000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position0, i128::from(1000000000), balance::create_for_testing(amount_x),
@@ -2916,6 +2922,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position1)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position1)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position1, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -2964,6 +2971,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             1000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(1000000000), balance::create_for_testing(amount_x),
@@ -2993,6 +3001,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             1000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(1000000000), balance::create_for_testing(amount_x),
@@ -3023,6 +3032,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             10000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(10000000000), balance::create_for_testing(amount_x),
@@ -3058,6 +3068,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             10000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(10000000000), balance::create_for_testing(amount_x),
@@ -3093,6 +3104,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             10000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(10000000000), balance::create_for_testing(amount_x),
@@ -3150,6 +3162,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3230,6 +3243,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3259,6 +3273,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3289,6 +3304,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3319,6 +3335,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3366,6 +3383,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3397,6 +3415,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3428,6 +3447,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),
@@ -3459,6 +3479,7 @@ module flowx_clmm::test_pool {
             tick_math::get_sqrt_price_at_tick(position::tick_lower_index(&position)),
             tick_math::get_sqrt_price_at_tick(position::tick_upper_index(&position)),
             2000000000,
+            true
         );
         pool::modify_liquidity<SUI, USDC>(
             &mut pool, &mut position, i128::from(2000000000), balance::create_for_testing(amount_x),

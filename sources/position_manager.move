@@ -21,6 +21,7 @@ module flowx_clmm::position_manager {
     const E_NOT_EMPTY_POSITION: u64 = 0;
     const E_INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1;
     const E_ZERO_COLLECT: u64 = 2;
+    const E_NOT_ORDERED: u64 = 3;
 
     struct PositionRegistry has key, store {
         id: UID,
@@ -75,35 +76,32 @@ module flowx_clmm::position_manager {
         ctx: &mut TxContext
     ): Position {
         versioned::check_version_and_upgrade(versioned);
-        if (utils::is_ordered<X, Y>()) {
-            open_position_<X, Y>(self, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
-        } else {
-            open_position_<Y, X>(self, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
-        }
-    }
+        if (!utils::is_ordered<X, Y>()) {
+            abort E_NOT_ORDERED
+        };
+        tick::check_ticks(tick_lower_index, tick_upper_index);
 
-    entry fun open_position_and_transfer<X, Y>(
-        self: &mut PositionRegistry,
-        pool_registry: &PoolRegistry,
-        fee_rate: u64,
-        tick_lower_index: u32,
-        tick_upper_index: u32,
-        recipient: address,
-        versioned: &mut Versioned,
-        ctx: &mut TxContext
-    ) {
-        transfer::public_transfer(
-            open_position<X, Y>(
-                self,
-                pool_registry,
-                fee_rate,
-                i32::from_u32(tick_lower_index),
-                i32::from_u32(tick_upper_index),
-                versioned,
-                ctx
-            ),
-            recipient
+        let pool = pool_manager::borrow_pool<X, Y>(pool_registry, fee_rate);
+        let position = position::open(
+            object::id(pool),
+            pool::swap_fee_rate(pool),
+            pool::coin_type_x(pool),
+            pool::coin_type_y(pool),
+            tick_lower_index,
+            tick_upper_index,
+            ctx
         );
+        self.num_positions = self.num_positions + 1;
+
+        event::emit(Open {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(pool),
+            position_id: object::id(&position),
+            tick_lower_index,
+            tick_upper_index
+        });
+        
+        position
     }
 
     public fun close_position(
@@ -142,17 +140,34 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &TxContext
     ) {
-        utils::check_deadline(clock, deadline);
-        let (amount_x, amount_y) = if (utils::is_ordered<X, Y>()) {
-            increase_liquidity_<X, Y>(self, position, x_in, y_in, versioned, clock, ctx)
-        } else {
-            let (amount_y, amount_x) = increase_liquidity_<Y, X>(self, position, y_in, x_in, versioned, clock, ctx);
-            (amount_x, amount_y)
+        if (!utils::is_ordered<X, Y>()) {
+            abort E_NOT_ORDERED
         };
+        utils::check_deadline(clock, deadline);
+        let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
+        let liquidity = liquidity_math::get_liquidity_for_amounts(
+            pool::sqrt_price_current(pool),
+            tick_math::get_sqrt_price_at_tick(position::tick_lower_index(position)),
+            tick_math::get_sqrt_price_at_tick(position::tick_upper_index(position)),
+            coin::value(&x_in),
+            coin::value(&y_in)
+        );
+        let (amount_x, amount_y) = pool::modify_liquidity(
+            pool, position, i128::from(liquidity), coin::into_balance(x_in), coin::into_balance(y_in), versioned, clock, ctx
+        );
 
         if (amount_x < amount_x_min || amount_y < amount_y_min) {
             abort E_INSUFFICIENT_OUTPUT_AMOUNT
         };
+
+        event::emit(IncreaseLiquidity {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(pool),
+            position_id: object::id(position),
+            liquidity,
+            amount_x,
+            amount_y
+        });
     }
 
     public fun decrease_liquidity<X, Y>(
@@ -166,17 +181,28 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &TxContext
     ) {
-        utils::check_deadline(clock, deadline);
-        let (amount_x, amount_y) = if (utils::is_ordered<X, Y>()) {
-            decrease_liquidity_<X, Y>(self, position, liquidity, versioned, clock, ctx)
-        } else {
-            let (amount_y, amount_x) = decrease_liquidity_<Y, X>(self, position, liquidity, versioned, clock, ctx);
-            (amount_x, amount_y)
+        if (!utils::is_ordered<X, Y>()) {
+            abort E_NOT_ORDERED
         };
+
+        utils::check_deadline(clock, deadline);
+        let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
+        let (amount_x, amount_y) = pool::modify_liquidity(
+            pool, position, i128::neg_from(liquidity), balance::zero(), balance::zero(), versioned, clock, ctx
+        );
 
         if (amount_x < amount_x_min || amount_y < amount_y_min) {
             abort E_INSUFFICIENT_OUTPUT_AMOUNT
         };
+
+        event::emit(DecreaseLiquidity {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(pool),
+            position_id: object::id(position),
+            liquidity,
+            amount_x,
+            amount_y
+        });
     }
 
     public fun collect<X, Y>(
@@ -188,114 +214,9 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
-        if (utils::is_ordered<X, Y>()) {
-            collect_<X, Y>(self, position, amount_x_requested, amount_y_requested, versioned, clock, ctx)
-        } else {
-            let (collectd_y, collected) = collect_<Y, X>(self, position, amount_y_requested, amount_x_requested, versioned, clock, ctx);
-            (collected, collectd_y)
-        }
-    }
-
-    fun open_position_<X, Y>(
-        self: &mut PositionRegistry,
-        pool_registry: &PoolRegistry,
-        fee_rate: u64,
-        tick_lower_index: I32,
-        tick_upper_index: I32,
-        ctx: &mut TxContext
-    ): Position {
-        tick::check_ticks(tick_lower_index, tick_upper_index);
-
-        let pool = pool_manager::borrow_pool<X, Y>(pool_registry, fee_rate);
-        let position = position::open(
-            object::id(pool),
-            pool::swap_fee_rate(pool),
-            pool::coin_type_x(pool),
-            pool::coin_type_y(pool),
-            tick_lower_index,
-            tick_upper_index,
-            ctx
-        );
-        self.num_positions = self.num_positions + 1;
-
-        event::emit(Open {
-            sender: tx_context::sender(ctx),
-            pool_id: object::id(pool),
-            position_id: object::id(&position),
-            tick_lower_index,
-            tick_upper_index
-        });
-        
-        position
-    }
-
-    fun increase_liquidity_<X, Y>(
-        self: &mut PoolRegistry,
-        position: &mut Position,
-        x_in: Coin<X>,
-        y_in: Coin<Y>,
-        versioned: &mut Versioned,
-        clock: &Clock,
-        ctx: &TxContext
-    ): (u64, u64) { 
-        let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
-        let liquidity = liquidity_math::get_liquidity_for_amounts(
-            pool::sqrt_price_current(pool),
-            tick_math::get_sqrt_price_at_tick(position::tick_lower_index(position)),
-            tick_math::get_sqrt_price_at_tick(position::tick_upper_index(position)),
-            coin::value(&x_in),
-            coin::value(&y_in)
-        );
-        let (amount_x, amount_y) = pool::modify_liquidity(
-            pool, position, i128::from(liquidity), coin::into_balance(x_in), coin::into_balance(y_in), versioned, clock, ctx
-        );
-
-        event::emit(IncreaseLiquidity {
-            sender: tx_context::sender(ctx),
-            pool_id: object::id(pool),
-            position_id: object::id(position),
-            liquidity,
-            amount_x,
-            amount_y
-        });
-
-        (amount_x, amount_y)
-    }
-
-    fun decrease_liquidity_<X, Y>(
-        self: &mut PoolRegistry,
-        position: &mut Position,
-        liquidity: u128,
-        versioned: &mut Versioned,
-        clock: &Clock,
-        ctx: &TxContext
-    ): (u64, u64) {
-        let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
-        let (amount_x, amount_y) = pool::modify_liquidity(
-            pool, position, i128::neg_from(liquidity), balance::zero(), balance::zero(), versioned, clock, ctx
-        );
-
-        event::emit(DecreaseLiquidity {
-            sender: tx_context::sender(ctx),
-            pool_id: object::id(pool),
-            position_id: object::id(position),
-            liquidity,
-            amount_x,
-            amount_y
-        });
-
-        (amount_x, amount_y)
-    }
-
-    fun collect_<X, Y>(
-        self: &mut PoolRegistry,
-        position: &mut Position,
-        amount_x_requested: u64,
-        amount_y_requested: u64,
-        versioned: &mut Versioned,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ): (Coin<X>, Coin<Y>) {
+        if (!utils::is_ordered<X, Y>()) {
+            abort E_NOT_ORDERED
+        };
         if (amount_x_requested == 0 && amount_y_requested == 0) {
             abort E_ZERO_COLLECT
         };
@@ -332,9 +253,10 @@ module flowx_clmm::position_manager {
         fee_rate: u64,
         tick_lower_index: I32,
         tick_upper_index: I32,
+        versioned: &mut Versioned,
         ctx: &mut TxContext
     ): Position {
-        open_position_<X, Y>(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, ctx)
+        open_position<X, Y>(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, versioned, ctx)
     }
 }
 
@@ -349,6 +271,7 @@ module flowx_clmm::test_position_manager {
     use flowx_clmm::pool_manager;
     use flowx_clmm::position_manager;
     use flowx_clmm::position;
+    use flowx_clmm::test_utils;
 
     struct USDT has drop {}
     struct USDC has drop {}
@@ -361,26 +284,180 @@ module flowx_clmm::test_position_manager {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         let position_registry = position_manager::create_for_testing(&mut ctx);
+        let (fee_rate, tick_spacing) = (3000, 60);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
 
-        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 500, 2);
-
-        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, 500, 714731077133269, &mut versioned, &clock, &mut ctx);
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, 500, i32::neg_from(203870), i32::neg_from(202540), &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
         );
         position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
             &mut position,
-            coin::mint_for_testing(10000000000000, &mut ctx),
-            coin::mint_for_testing(16165, &mut ctx),
-            9950000000000,
-            16084,
+            coin::mint_for_testing(1000, &mut ctx),
+            coin::mint_for_testing(1000, &mut ctx),
+            0,
+            0,
             1000,
             &mut versioned,
             &clock,
             &ctx
         );
-        
+        assert!(position::liquidity(&position) == 1000, 0);
+        assert!(position::fee_rate(&position) == fee_rate, 0);
+        assert!(i32::eq(position::tick_lower_index(&position), min_tick), 0);
+        assert!(i32::eq(position::tick_upper_index(&position), max_tick), 0);
+        assert!(position::coins_owed_x(&position) == 0, 0);
+        assert!(position::coins_owed_y(&position) == 0, 0);
+        assert!(position::fee_growth_inside_x_last(&position) == 0, 0);
+        assert!(position::fee_growth_inside_y_last(&position) == 0, 0);
+
+        position_manager::increase_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            coin::mint_for_testing(100, &mut ctx),
+            coin::mint_for_testing(100, &mut ctx),
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+        assert!(position::liquidity(&position) == 1100, 0);
+        assert!(position::fee_rate(&position) == fee_rate, 0);
+        assert!(i32::eq(position::tick_lower_index(&position), min_tick), 0);
+        assert!(i32::eq(position::tick_upper_index(&position), max_tick), 0);
+        assert!(position::coins_owed_x(&position) == 0, 0);
+        assert!(position::coins_owed_y(&position) == 0, 0);
+        assert!(position::fee_growth_inside_x_last(&position) == 0, 0);
+        assert!(position::fee_growth_inside_y_last(&position) == 0, 0);
+
+        position::destroy_for_testing(position);
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+        position_manager::destroy_for_testing(position_registry);
+    }
+
+    #[test]
+    fun test_decrease_liquidy() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        let position_registry = position_manager::create_for_testing(&mut ctx);
+        let (fee_rate, tick_spacing) = (3000, 60);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
+
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        let position = position_manager::open_for_testing<SCB, USDC>(
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+        );
+        position_manager::increase_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            coin::mint_for_testing(100, &mut ctx),
+            coin::mint_for_testing(100, &mut ctx),
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+
+        position_manager::decrease_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            25,
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+        assert!(position::liquidity(&position) == 75, 0);
+        assert!(position::fee_rate(&position) == fee_rate, 0);
+        assert!(i32::eq(position::tick_lower_index(&position), min_tick), 0);
+        assert!(i32::eq(position::tick_upper_index(&position), max_tick), 0);
+        assert!(position::coins_owed_x(&position) == 24, 0);
+        assert!(position::coins_owed_y(&position) == 24, 0);
+        assert!(position::fee_growth_inside_x_last(&position) == 0, 0);
+        assert!(position::fee_growth_inside_y_last(&position) == 0, 0);
+
+        //can decrease for all the liquidity
+        position_manager::decrease_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            75,
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+        assert!(position::liquidity(&position) == 0, 0);
+        assert!(position::fee_rate(&position) == fee_rate, 0);
+        assert!(i32::eq(position::tick_lower_index(&position), min_tick), 0);
+        assert!(i32::eq(position::tick_upper_index(&position), max_tick), 0);
+        assert!(position::coins_owed_x(&position) == 98, 0);
+        assert!(position::coins_owed_y(&position) == 98, 0);
+        assert!(position::fee_growth_inside_x_last(&position) == 0, 0);
+        assert!(position::fee_growth_inside_y_last(&position) == 0, 0);
+
+        position::destroy_for_testing(position);
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+        position_manager::destroy_for_testing(position_registry);
+    }
+    
+    #[test]
+    #[expected_failure(abort_code = flowx_clmm::liquidity_math::E_UNDERFLOW)]
+    fun test_decrease_liquidy_fail_if_exceed_max_amount() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        let position_registry = position_manager::create_for_testing(&mut ctx);
+        let (fee_rate, tick_spacing) = (3000, 60);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
+
+        let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        let position = position_manager::open_for_testing<SCB, USDC>(
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+        );
+        position_manager::increase_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            coin::mint_for_testing(100, &mut ctx),
+            coin::mint_for_testing(100, &mut ctx),
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+
+        position_manager::decrease_liquidity<SCB, USDC>(
+            &mut pool_registry,
+            &mut position,
+            101,
+            0,
+            0,
+            1000,
+            &mut versioned,
+            &clock,
+            &ctx
+        );
+
         position::destroy_for_testing(position);
         clock::destroy_for_testing(clock);
         versioned::destroy_for_testing(versioned);

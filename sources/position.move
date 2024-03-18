@@ -63,6 +63,10 @@ module flowx_clmm::position {
 
     public fun coins_owed_y(self: &Position): u64 { self.coins_owed_y }
 
+    public fun fee_growth_inside_x_last(self: &Position): u128 { self.fee_growth_inside_x_last }
+
+    public fun fee_growth_inside_y_last(self: &Position): u128 { self.fee_growth_inside_y_last }
+
     public(friend) fun open(
         pool_id: ID,
         fee_rate: u64,

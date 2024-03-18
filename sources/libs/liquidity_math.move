@@ -61,6 +61,7 @@ module flowx_clmm::liquidity_math {
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
         liquidity: u128,
+        add: bool,
     ): u64 {
         let (sqrt_ratio_a_sorted, sqrt_ratio_b_sorted) = sort_sqrt_prices(sqrt_ratio_a, sqrt_ratio_b);
         let sqrt_ratio_diff = sqrt_ratio_b_sorted - sqrt_ratio_a_sorted;
@@ -74,13 +75,14 @@ module flowx_clmm::liquidity_math {
         };
 
         let denominator = full_math_u128::full_mul(sqrt_ratio_a_sorted, sqrt_ratio_b_sorted);
-        (math_u256::div_round(numerator, denominator, true) as u64)
+        (math_u256::div_round(numerator, denominator, add) as u64)
     }
 
     public fun get_amount_y_for_liquidity(
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
         liquidity: u128,
+        add: bool,
     ): u64 {
         let (sqrt_ratio_a_sorted, sqrt_ratio_b_sorted) = sort_sqrt_prices(sqrt_ratio_a, sqrt_ratio_b);
         let sqrt_ratio_diff = sqrt_ratio_b_sorted - sqrt_ratio_a_sorted;
@@ -88,7 +90,7 @@ module flowx_clmm::liquidity_math {
             (
                 math_u256::div_round(
                     full_math_u128::full_mul(liquidity, sqrt_ratio_diff), (constants::get_q64() as u256),
-                    true
+                    add
                 ) as u64
             )
         )
@@ -99,17 +101,18 @@ module flowx_clmm::liquidity_math {
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
         liquidity: u128,
+        add: bool,
     ): (u64, u64) {
         let (sqrt_ratio_a_sorted, sqrt_ratio_b_sorted) = sort_sqrt_prices(sqrt_ratio_a, sqrt_ratio_b);
         if (sqrt_ratio_x <= sqrt_ratio_a_sorted) {
-            (get_amount_x_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_b_sorted, liquidity), 0)
+            (get_amount_x_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_b_sorted, liquidity, add), 0)
         } else if (sqrt_ratio_x < sqrt_ratio_b_sorted) {
             (
-                get_amount_x_for_liquidity(sqrt_ratio_x, sqrt_ratio_b_sorted, liquidity),
-                get_amount_y_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_x, liquidity),
+                get_amount_x_for_liquidity(sqrt_ratio_x, sqrt_ratio_b_sorted, liquidity, add),
+                get_amount_y_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_x, liquidity, add),
             )
         } else {
-            (0, get_amount_y_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_b_sorted, liquidity))
+            (0, get_amount_y_for_liquidity(sqrt_ratio_a_sorted, sqrt_ratio_b_sorted, liquidity, add))
         }
     }
 
@@ -210,5 +213,45 @@ module flowx_clmm::liquidity_math {
             200
         );
         assert!(liquidity == 2097, 0);
+    }
+
+    #[test]
+    fun test_get_amounts_for_liquidity() {
+        use flowx_clmm::test_utils;
+
+        //amounts for price inside
+        let sqrt_price_x = test_utils::encode_sqrt_price(1, 1);
+        let sqrt_price_a = test_utils::encode_sqrt_price(100, 110);
+        let sqrt_price_b = test_utils::encode_sqrt_price(110, 100);
+        let (amount_x, amount_y) = get_amounts_for_liquidity(sqrt_price_x, sqrt_price_a, sqrt_price_b, 2148, false);
+        assert!(amount_x == 99 && amount_y == 99, 0);
+
+        //amounts for price below
+        let sqrt_price_x = test_utils::encode_sqrt_price(99, 110);
+        let sqrt_price_a = test_utils::encode_sqrt_price(100, 110);
+        let sqrt_price_b = test_utils::encode_sqrt_price(110, 100);
+        let (amount_x, amount_y) = get_amounts_for_liquidity(sqrt_price_x, sqrt_price_a, sqrt_price_b, 1048, false);
+        assert!(amount_x == 99 && amount_y == 0, 0);
+
+        //amounts for price above
+        let sqrt_price_x = test_utils::encode_sqrt_price(111, 100);
+        let sqrt_price_a = test_utils::encode_sqrt_price(100, 110);
+        let sqrt_price_b = test_utils::encode_sqrt_price(110, 100);
+        let (amount_x, amount_y) = get_amounts_for_liquidity(sqrt_price_x, sqrt_price_a, sqrt_price_b, 1048, false);
+        assert!(amount_x == 0 && amount_y == 99, 0);
+
+        //amounts for price on lower boundary
+        let sqrt_price_a = test_utils::encode_sqrt_price(100, 110);
+        let sqrt_price_x = sqrt_price_a;
+        let sqrt_price_b = test_utils::encode_sqrt_price(110, 100);
+        let (amount_x, amount_y) = get_amounts_for_liquidity(sqrt_price_x, sqrt_price_a, sqrt_price_b, 1048, false);
+        assert!(amount_x == 99 && amount_y == 0, 0);
+
+        //amounts for price on upper boundary
+        let sqrt_price_a = test_utils::encode_sqrt_price(100, 110);
+        let sqrt_price_b = test_utils::encode_sqrt_price(110, 100);
+        let sqrt_price_x = sqrt_price_b;
+        let (amount_x, amount_y) = get_amounts_for_liquidity(sqrt_price_x, sqrt_price_a, sqrt_price_b, 1048, false);
+        assert!(amount_x == 0 && amount_y == 99, 0);
     }
 }
