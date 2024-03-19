@@ -17,7 +17,7 @@ module flowx_clmm::position {
     friend flowx_clmm::pool;
     friend flowx_clmm::position_manager;
 
-    const E_EMPTY_POSITION: u64 = 1;
+    const E_EMPTY_POSITION: u64 = 0;
     const E_COINS_OWED_OVERFLOW: u64 = 1;
 
     struct POSITION has drop {}
