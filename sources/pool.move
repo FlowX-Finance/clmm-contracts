@@ -80,7 +80,8 @@ module flowx_clmm::pool {
         tick_index: I32,
         fee_growth_global: u128,
         protocol_fee: u64,
-        liquidity: u128
+        liquidity: u128,
+        fee_amount: u64
     }
 
     struct SwapStepComputations has copy, drop {
@@ -124,9 +125,13 @@ module flowx_clmm::pool {
         x_for_y: bool,
         amount_x: u64,
         amount_y: u64,
-        sqrt_price: u128,
+        sqrt_price_before: u128,
+        sqrt_price_after: u128,
         liquidity: u128,
-        tick_index: I32
+        tick_index: I32,
+        fee_amount: u64,
+        reserve_x: u64,
+        reserve_y: u64
     }
 
     struct Flash has copy, drop, store {
@@ -369,6 +374,7 @@ module flowx_clmm::pool {
 
         self.locked = true;
 
+        let sqrt_price_before = self.sqrt_price;
         let (timestamp_s, computed_latest_observation) = (utils::to_seconds(clock::timestamp_ms(clock)), false);
 
         let protocol_fee_rate = if (exact_in) {
@@ -389,7 +395,8 @@ module flowx_clmm::pool {
             tick_index: self.tick_index,
             fee_growth_global,
             protocol_fee: 0,
-            liquidity: self.liquidity
+            liquidity: self.liquidity,
+            fee_amount: 0
         };
 
         while(state.amount_specified_remaining != 0 && state.sqrt_price != sqrt_price_limit) {
@@ -469,6 +476,7 @@ module flowx_clmm::pool {
                     )
                 );
             };
+            state.fee_amount = state.fee_amount + step.fee_amount;
 
             // shift tick if we reached the next price
             if (state.sqrt_price == step.sqrt_price_next) {
@@ -591,9 +599,13 @@ module flowx_clmm::pool {
             x_for_y,
             amount_x,
             amount_y,
-            sqrt_price: state.sqrt_price,
+            sqrt_price_before,
+            sqrt_price_after: state.sqrt_price,
             liquidity: state.liquidity,
-            tick_index: state.tick_index
+            tick_index: state.tick_index,
+            fee_amount: state.fee_amount,
+            reserve_x: balance::value(&self.reserve_x),
+            reserve_y: balance::value(&self.reserve_y),
         });
 
         (x_out, y_out, receipt)

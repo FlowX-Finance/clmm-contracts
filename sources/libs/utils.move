@@ -1,7 +1,10 @@
 module flowx_clmm::utils {
     use std::type_name;
     use std::ascii;
+    use sui::tx_context::TxContext;
     use sui::clock::{Self, Clock};
+    use sui::coin::{Self, Coin};
+    use sui::transfer;
 
     use flowx_clmm::comparator;
 
@@ -26,5 +29,17 @@ module flowx_clmm::utils {
 
     public fun to_seconds(ms: u64): u64 {
         ms / 1000
+    }
+
+    #[lint_allow(self_transfer)]
+    public fun refund<X>(
+        refunded: Coin<X>,
+        receipt: address
+    ) {
+        if (coin::value(&refunded) > 0) {
+            transfer::public_transfer(refunded, receipt);
+        } else {
+            coin::destroy_zero(refunded)
+        }; 
     }
 }
