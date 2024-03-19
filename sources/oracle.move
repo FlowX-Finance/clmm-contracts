@@ -162,7 +162,7 @@ module flowx_clmm::oracle {
 
             if (!before_or_at.initialized) {
                 l = i + 1;
-                continue;
+                continue
             };
 
             at_or_after = try_get_observation(self, (i + 1) % cardinality);
