@@ -143,6 +143,7 @@ module flowx_clmm::oracle {
         }
     }
 
+    #[allow(unused_assignment)]
     public fun binary_search(
         self: &vector<Observation>,
         target: u64,

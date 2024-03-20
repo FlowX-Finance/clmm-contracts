@@ -10,7 +10,7 @@ module flowx_clmm::position_manager {
     use flowx_clmm::i128;
     use flowx_clmm::tick_math;
     use flowx_clmm::liquidity_math;
-    use flowx_clmm::i32::{Self, I32};
+    use flowx_clmm::i32::I32;
     use flowx_clmm::tick;
     use flowx_clmm::pool;
     use flowx_clmm::position::{Self, Position};

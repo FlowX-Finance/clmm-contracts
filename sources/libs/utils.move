@@ -1,7 +1,6 @@
 module flowx_clmm::utils {
     use std::type_name;
     use std::ascii;
-    use sui::tx_context::TxContext;
     use sui::clock::{Self, Clock};
     use sui::coin::{Self, Coin};
     use sui::transfer;

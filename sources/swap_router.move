@@ -3,7 +3,6 @@ module flowx_clmm::swap_router {
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::clock::Clock;
-    use sui::transfer;
 
     use flowx_clmm::pool_manager::{Self, PoolRegistry};
     use flowx_clmm::tick_math;
