@@ -98,10 +98,7 @@ module flowx_clmm::oracle {
         let index_updated = (index + 1) % cardinality_updated;
         let transformed = transform(last, time, tick_index, liquidity);
         let observation = vector::borrow_mut(self, index_updated);
-        observation.timestamp_s = transformed.timestamp_s;
-        observation.tick_cumulative = transformed.tick_cumulative;
-        observation.seconds_per_liquidity_cumulative = transformed.seconds_per_liquidity_cumulative;
-        observation.initialized = transformed.initialized;
+        *observation = transformed;
 
         (index_updated, cardinality_updated)
     }
