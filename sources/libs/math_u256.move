@@ -65,6 +65,7 @@ module flowx_clmm::math_u256 {
 
     #[test]
     fun test_overflow_add() {
+        assert!(overflow_add(MAX_U256, 0) == MAX_U256, 0);
         assert!(overflow_add(MAX_U256, 1) == 0, 0);
         assert!(overflow_add(MAX_U256, 100) == 99, 0);
         assert!(overflow_add(MAX_U256 - 100, 100) == MAX_U256, 0);

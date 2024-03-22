@@ -9,6 +9,9 @@ module flowx_clmm::oracle {
     
     const E_NOT_INITIALIZED: u64 = 0;
     const E_OLDEST_OBSERVATION: u64 = 1;
+    const E_EXCEEDED_OBSERVATION_CAP: u64 = 2;
+    
+    const OBSERVATION_CAP: u64 = 1000u64;
 
     struct Observation has copy, drop, store {
         timestamp_s: u64,
@@ -110,6 +113,10 @@ module flowx_clmm::oracle {
     ): u64 {
         if (current == 0) {
             abort E_NOT_INITIALIZED
+        };
+
+        if (next >= OBSERVATION_CAP) {
+            abort E_EXCEEDED_OBSERVATION_CAP
         };
 
         if (next <= current) {
@@ -392,6 +399,28 @@ module flowx_clmm::oracle {
         assert!(oracle.index == 0, 0);
         grow_for_testing(&mut oracle, 3);
         assert!(oracle.index == 0 && oracle.cardinality == 2 && oracle.cardinality_next == 3, 0);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = flowx_clmm::oracle::E_EXCEEDED_OBSERVATION_CAP)]
+    public fun test_grow_fail_if_exceeds_cap() {
+        let oracle = initialize_for_testing(0, i32::zero(), 0);
+
+        //increases the cardinality next for the first call
+        grow_for_testing(&mut oracle, 5);
+        assert!(oracle.index == 0 && oracle.cardinality == 1 && oracle.cardinality_next == 5, 0);
+
+        //does not touch the first slot
+        let observation_at_0 = vector::borrow(&oracle.observations, 0);
+        assert!(
+            observation_at_0.timestamp_s == 0 && 
+            i64::eq(observation_at_0.tick_cumulative, i64::zero()) &&
+            observation_at_0.seconds_per_liquidity_cumulative == 0 &&
+            observation_at_0.initialized,
+            0
+        );
+
+        grow_for_testing(&mut oracle, 1001);
     }
 
     #[test]
