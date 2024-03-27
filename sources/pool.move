@@ -319,8 +319,6 @@ module flowx_clmm::pool {
         let (amount_x, amount_y) = modify_position(self, position, liquidity_delta, clock);
         if (add) {
             if (balance::value(&x_in) < amount_x || balance::value(&y_in) < amount_y) {
-                std::debug::print(&x_in);
-                std::debug::print(&y_in);
                 abort E_INSUFFICIENT_INPUT_AMOUNT
             };
         } else {

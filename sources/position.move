@@ -143,8 +143,6 @@ module flowx_clmm::position {
             self.liquidity,
             constants::get_q64()
         );
-        // std::debug::print(&fee_growth_inside_x);
-        // std::debug::print(&fee_growth_inside_y);
 
         if (coins_owed_x > (constants::get_max_u64() as u128) || coins_owed_y > (constants::get_max_u64() as u128)) {
             abort E_COINS_OWED_OVERFLOW
