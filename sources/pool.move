@@ -315,7 +315,7 @@ module flowx_clmm::pool {
         check_lock(self);
         check_pool_match(self, position::pool_id(position));
 
-        let add = i128::gte(liquidity_delta, i128::zero());
+        let add = !i128::is_neg(liquidity_delta);
         let (amount_x, amount_y) = modify_position(self, position, liquidity_delta, clock);
         if (add) {
             if (balance::value(&x_in) < amount_x || balance::value(&y_in) < amount_y) {
@@ -326,7 +326,6 @@ module flowx_clmm::pool {
                 position::increase_debt(position, amount_x, amount_y);
             };
         };
-
         put(self, x_in, y_in);
 
         event::emit(ModifyLiquidity{
@@ -373,7 +372,8 @@ module flowx_clmm::pool {
         self.locked = true;
 
         let sqrt_price_before = self.sqrt_price;
-        let (timestamp_s, computed_latest_observation) = (utils::to_seconds(clock::timestamp_ms(clock)), false);
+        let (timestamp_s, computed_latest_observation, tick_cumulative, seconds_per_liquidity_cumulative)
+            = (utils::to_seconds(clock::timestamp_ms(clock)), false, i64::zero(), 0);
 
         let protocol_fee_rate = if (exact_in) {
             self.protocol_fee_rate % 16
@@ -488,9 +488,9 @@ module flowx_clmm::pool {
                 if (step.initialized) {
                     // check for the placeholder value, which we replace with the actual value the first time the swap
                     // crosses an initialized tick
-                    let (tick_cumulative, seconds_per_liquidity_cumulative) = if (!computed_latest_observation) {
+                    if (!computed_latest_observation) {
                         computed_latest_observation = true;
-                        oracle::observe_single(
+                        let (_tick_cumulative, _seconds_per_liquidity_cumulative) = oracle::observe_single(
                             &self.observations,
                             timestamp_s,
                             0,
@@ -498,9 +498,9 @@ module flowx_clmm::pool {
                             self.observation_index,
                             self.liquidity,
                             self.observation_cardinality
-                        )
-                    } else {
-                        (i64::zero(), 0)
+                        );
+                        tick_cumulative = _tick_cumulative;
+                        seconds_per_liquidity_cumulative = _seconds_per_liquidity_cumulative;
                     };
 
                     let liquidity_net = tick::cross(
@@ -952,7 +952,7 @@ module flowx_clmm::pool {
         liquidity_delta: I128,
         clock: &Clock,
     ): (u64, u64) {
-        let add = i128::gte(liquidity_delta, i128::zero());
+        let add = !i128::is_neg(liquidity_delta);
         let (tick_lower_index, tick_upper_index) = (position::tick_lower_index(position), position::tick_upper_index(position));
         let liquidity_delta_abs = i128::abs_u128(liquidity_delta);
 
