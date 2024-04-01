@@ -25,8 +25,9 @@ module flowx_clmm::swap_router {
             pool, true, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, true), versioned, clock, ctx
         );
         balance::destroy_zero(x_out);
-        pool::pay(pool, receipt, coin::into_balance(coin_in), balance::zero(), versioned, ctx);
-
+        let (amount_x_required, _) = pool::swap_receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::split(coin::balance_mut(&mut coin_in), amount_x_required), balance::zero(), versioned, ctx);
+        utils::refund(coin_in, tx_context::sender(ctx));
         y_out
     }
 
@@ -42,8 +43,9 @@ module flowx_clmm::swap_router {
             pool, false, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, false), versioned, clock, ctx
         );
         balance::destroy_zero(y_out);
-        pool::pay(pool, receipt, balance::zero(), coin::into_balance(coin_in), versioned, ctx);
-
+        let (_, amount_y_required) = pool::swap_receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::zero(), balance::split(coin::balance_mut(&mut coin_in), amount_y_required), versioned, ctx);
+        utils::refund(coin_in, tx_context::sender(ctx));
         x_out
     }
 
