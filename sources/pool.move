@@ -129,9 +129,7 @@ module flowx_clmm::pool {
         sqrt_price_after: u128,
         liquidity: u128,
         tick_index: I32,
-        fee_amount: u64,
-        reserve_x: u64,
-        reserve_y: u64
+        fee_amount: u64
     }
 
     struct Flash has copy, drop, store {
@@ -601,9 +599,7 @@ module flowx_clmm::pool {
             sqrt_price_after: state.sqrt_price,
             liquidity: state.liquidity,
             tick_index: state.tick_index,
-            fee_amount: state.fee_amount,
-            reserve_x: balance::value(&self.reserve_x),
-            reserve_y: balance::value(&self.reserve_y),
+            fee_amount: state.fee_amount
         });
 
         (x_out, y_out, receipt)
