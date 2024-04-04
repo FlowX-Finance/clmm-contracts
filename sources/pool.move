@@ -1,5 +1,6 @@
 module flowx_clmm::pool {
     use std::vector;
+    use std::option::{Self, Option};
     use std::type_name::{Self, TypeName};
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
@@ -7,6 +8,8 @@ module flowx_clmm::pool {
     use sui::table::{Self, Table};
     use sui::event;
     use sui::clock::{Self, Clock};
+    use sui::dynamic_field::{Self as df};
+    use sui::math;
     
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::i32::{Self, I32};
@@ -37,8 +40,10 @@ module flowx_clmm::pool {
     const E_INSUFFICIENT_LIQUIDITY: u64 = 6;
     const E_INVALID_PROTOCOL_FEE_RATE: u64 = 7;
     const E_TICK_NOT_INITIALIZED: u64 = 8;
+    const E_INVALID_REWARD_TIMESTAMP: u64 = 9;
+    const E_POOL_REWARD_NOT_FOUND: u64 = 10;
 
-    struct ReserveDfKey<phantom T> has copy, drop, store {}
+    struct PoolRewardCustodianDfKey<phantom T> has copy, drop, store {}
 
     struct Pool<phantom CoinX, phantom CoinY> has key, store {
         id: UID,
@@ -68,9 +73,20 @@ module flowx_clmm::pool {
         ticks: Table<I32, TickInfo>,
         tick_bitmap: Table<I32, u256>,
         observations: vector<Observation>,
+        locked: bool,
+        reward_infos: vector<PoolRewardInfo>,
         reserve_x: Balance<CoinX>,
         reserve_y: Balance<CoinY>,
-        locked: bool
+    }
+
+    struct PoolRewardInfo has copy, store, drop {
+        reward_coin_type: TypeName,
+        last_update_time: u64,
+        ended_at_seconds: u64,
+        total_reward: u64,
+        total_reward_allocated: u64,
+        reward_per_seconds: u128,
+        reward_growth_global: u128
     }
 
     struct SwapState has copy, drop {
@@ -186,6 +202,15 @@ module flowx_clmm::pool {
         observation_cardinality_next_new: u64
     }
 
+    struct InitializePoolReward has copy, drop, store {
+        sender: address,
+        pool_id: ID,
+        reward_coin_type: TypeName,
+        started_at_seconds: u64,
+        ended_at_seconds: u64,
+        initial_allocation: u64
+    }
+
     public fun pool_id<X, Y>(self: &Pool<X, Y>): ID { object::id(self) }
 
     public fun coin_type_x<X, Y>(self: &Pool<X, Y>): TypeName { self.coin_type_x }
@@ -264,9 +289,10 @@ module flowx_clmm::pool {
             observation_cardinality: 0,
             observation_cardinality_next: 0,
             observations: vector::empty(),
+            locked: true,
+            reward_infos: vector::empty(),
             reserve_x: balance::zero(),
             reserve_y: balance::zero(),
-            locked: true
         };
         pool
     }
@@ -368,10 +394,12 @@ module flowx_clmm::pool {
         };
 
         self.locked = true;
-
+        
         let sqrt_price_before = self.sqrt_price;
         let (timestamp_s, computed_latest_observation, tick_cumulative, seconds_per_liquidity_cumulative)
             = (utils::to_seconds(clock::timestamp_ms(clock)), false, i64::zero(), 0);
+
+        let reward_growths_global = update_reward_infos(self, timestamp_s);
 
         let protocol_fee_rate = if (exact_in) {
             self.protocol_fee_rate % 16
@@ -394,6 +422,7 @@ module flowx_clmm::pool {
             liquidity: self.liquidity,
             fee_amount: 0
         };
+
 
         while(state.amount_specified_remaining != 0 && state.sqrt_price != sqrt_price_limit) {
             let step = SwapStepComputations {
@@ -506,6 +535,7 @@ module flowx_clmm::pool {
                         step.tick_index_next,
                         fee_growth_global_x,
                         fee_growth_global_y,
+                        reward_growths_global,
                         seconds_per_liquidity_cumulative,
                         tick_cumulative,
                         timestamp_s
@@ -942,6 +972,106 @@ module flowx_clmm::pool {
         )
     }
 
+    public fun initialize_pool_reward<X, Y, RewardCoinType>(
+        _: &AdminCap,
+        self: &mut Pool<X, Y>,
+        started_at_seconds: u64,
+        ended_at_seconds: u64,
+        allocated: Balance<RewardCoinType>,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        versioned::check_version_and_upgrade(versioned);
+        check_lock(self);
+
+        let current_timestamp = utils::to_seconds(clock::timestamp_ms(clock));
+        if (started_at_seconds <= current_timestamp || ended_at_seconds <= started_at_seconds) {
+            abort E_INVALID_REWARD_TIMESTAMP
+        };
+
+        let reward_coin_type = type_name::get<RewardCoinType>();
+        let reward_info = PoolRewardInfo {
+            reward_coin_type,
+            last_update_time: started_at_seconds,
+            ended_at_seconds: 0,
+            reward_per_seconds: 0,
+            total_reward: 0,
+            total_reward_allocated: 0,
+            reward_growth_global: 0
+        };
+        df::add(&mut self.id, PoolRewardCustodianDfKey<RewardCoinType> {}, balance::zero<RewardCoinType>());
+
+        event::emit(InitializePoolReward {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(self),
+            reward_coin_type,
+            started_at_seconds,
+            ended_at_seconds,
+            initial_allocation: balance::value(&allocated)
+        });
+
+        update_pool_reward<X, Y, RewardCoinType>(self, allocated, ended_at_seconds, ctx);
+        vector::push_back(&mut self.reward_infos, reward_info);
+    }
+
+    public fun increase_pool_reward<X, Y, RewardCoinType>(
+        _: &AdminCap,
+        self: &mut Pool<X, Y>,
+        allocated: Balance<RewardCoinType>,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        versioned::check_version_and_upgrade(versioned);
+        check_lock(self);
+
+        update_reward_infos(self, utils::to_seconds(clock::timestamp_ms(clock)));
+
+        update_pool_reward<X, Y, RewardCoinType>(self, allocated, 0, ctx);
+    }
+
+    public fun extend_timestamp_pool_reward<X, Y, RewardCoinType>(
+        _: &AdminCap,
+        self: &mut Pool<X, Y>,
+        extend_timstamp: u64,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        versioned::check_version_and_upgrade(versioned);
+        check_lock(self);
+
+        update_reward_infos(self, utils::to_seconds(clock::timestamp_ms(clock)));
+
+        update_pool_reward<X, Y, RewardCoinType>(self, balance::zero<RewardCoinType>(), extend_timstamp, ctx);
+    }
+
+    fun update_pool_reward<X, Y, RewardCoinType>(
+        self: &mut Pool<X, Y>,
+        allocated: Balance<RewardCoinType>,
+        extend_timstamp: u64,
+        ctx: &TxContext
+    ) {
+        let reward_info_at = find_reward_info_index<X, Y, RewardCoinType>(self);
+        if (option::is_none(&reward_info_at)) {
+            abort E_POOL_REWARD_NOT_FOUND
+        };
+
+        let reward_info = vector::borrow_mut(&mut self.reward_infos, option::destroy_some(reward_info_at));
+        reward_info.total_reward = reward_info.total_reward + balance::value(&allocated);
+        reward_info.ended_at_seconds = reward_info.ended_at_seconds + extend_timstamp;
+        reward_info.reward_per_seconds = full_math_u128::mul_div_floor(
+            ((reward_info.total_reward - reward_info.total_reward_allocated) as u128),
+            (constants::get_q64() as u128),
+            ((reward_info.ended_at_seconds - reward_info.last_update_time) as u128)  
+        );
+        balance::join(
+            df::borrow_mut(&mut self.id, PoolRewardCustodianDfKey<RewardCoinType> {}),
+            allocated
+        );
+    }
+
     fun modify_position<X, Y>(
         pool: &mut Pool<X, Y>,
         position: &mut Position,
@@ -1019,6 +1149,7 @@ module flowx_clmm::pool {
         liquidity_delta: I128,
         clock: &Clock,
     ) {
+        let reward_growths_global = update_reward_infos(pool, utils::to_seconds(clock::timestamp_ms(clock)));
         let (tick_lower_index, tick_upper_index) = (position::tick_lower_index(position), position::tick_upper_index(position));
         let (flipped_lower, flipped_upper) = if (!i128::eq(liquidity_delta, i128::zero())) {
             let timestamp_s = utils::to_seconds(clock::timestamp_ms(clock));
@@ -1040,6 +1171,7 @@ module flowx_clmm::pool {
                     liquidity_delta,
                     pool.fee_growth_global_x,
                     pool.fee_growth_global_y,
+                    reward_growths_global,
                     seconds_per_liquidity_cumulative,
                     tick_cumulative,
                     timestamp_s,
@@ -1053,6 +1185,7 @@ module flowx_clmm::pool {
                     liquidity_delta,
                     pool.fee_growth_global_x,
                     pool.fee_growth_global_y,
+                    reward_growths_global,
                     seconds_per_liquidity_cumulative,
                     tick_cumulative,
                     timestamp_s,
@@ -1073,10 +1206,10 @@ module flowx_clmm::pool {
             (false, false)
         };
         
-        let (fee_growth_inside_x, fee_growth_inside_y) =
-            tick::get_fee_growth_inside(&pool.ticks, tick_lower_index, tick_upper_index, pool.tick_index, pool.fee_growth_global_x, pool.fee_growth_global_y);
+        let (fee_growth_inside_x, fee_growth_inside_y, reward_growths_inside) =
+            tick::get_fee_and_reward_growths_inside(&pool.ticks, tick_lower_index, tick_upper_index, pool.tick_index, pool.fee_growth_global_x, pool.fee_growth_global_y, reward_growths_global);
 
-        position::update(position, liquidity_delta, fee_growth_inside_x, fee_growth_inside_y);
+        position::update(position, liquidity_delta, fee_growth_inside_x, fee_growth_inside_y, reward_growths_inside);
 
         // clear any tick data that is no longer needed
         if (i128::lt(liquidity_delta, i128::zero())) {
@@ -1087,6 +1220,50 @@ module flowx_clmm::pool {
                 tick::clear(&mut pool.ticks, tick_upper_index);
             };
         };
+    }
+
+    fun update_reward_infos<X, Y>(self: &mut Pool<X, Y>, current_timestamp: u64): vector<u128> {
+        let reward_growths_global = vector::empty<u128>();
+        let (i, num_rewards) = (0, vector::length(&self.reward_infos));
+        while(i < num_rewards) {
+            let reward_info = vector::borrow_mut(&mut self.reward_infos, i);
+
+            if (current_timestamp <= reward_info.last_update_time) {
+                continue
+            };
+
+            let latest_update_timestamp = math::min(current_timestamp, reward_info.ended_at_seconds);
+
+            if (self.liquidity != 0) {
+                let time_delta = latest_update_timestamp - reward_info.last_update_time;
+
+                let pending_reward = full_math_u128::full_mul((time_delta as u128), reward_info.reward_per_seconds);
+                let reward_growth_delta = pending_reward / (self.liquidity as u256);
+                reward_info.reward_growth_global = full_math_u128::wrapping_add(
+                    reward_info.reward_growth_global,
+                    (reward_growth_delta as u128)
+                );
+                reward_info.total_reward_allocated = reward_info.total_reward_allocated + ((pending_reward / (constants::get_q64() as u256)) as u64);
+                vector::push_back(&mut reward_growths_global, reward_info.reward_growth_global);
+            };
+            reward_info.last_update_time = latest_update_timestamp;
+            i = i + 1;
+        };
+        reward_growths_global
+    }
+
+    fun find_reward_info_index<X, Y, RewardCoinType>(self: &Pool<X, Y>): Option<u64> {
+        let (i, len) = (0, vector::length(&self.reward_infos));
+        let found = option::none();
+        while (i < len) {
+            if (vector::borrow(&self.reward_infos, i).reward_coin_type == type_name::get<RewardCoinType>()) {
+                found = option::some(i);
+                break
+            };
+
+            i = i + 1;
+        };
+        found
     }
 
     fun check_pool_match<X, Y>(self: &Pool<X, Y>, id: ID) {
@@ -1136,7 +1313,7 @@ module flowx_clmm::pool {
             id, coin_type_x: _, coin_type_y: _, sqrt_price: _, tick_index: _, observation_index: _, observation_cardinality: _,
             observation_cardinality_next: _, tick_spacing: _, max_liquidity_per_tick: _, protocol_fee_rate: _, swap_fee_rate: _,
             fee_growth_global_x: _, fee_growth_global_y: _, protocol_fee_x: _, protocol_fee_y: _, liquidity: _, ticks, tick_bitmap,
-            observations, reserve_x, reserve_y, locked: _
+            observations, locked: _, reward_infos: _, reserve_x, reserve_y, 
         } = pool;
         object::delete(id);
         table::drop(ticks);

@@ -1,4 +1,5 @@
 module flowx_clmm::utils {
+    use std::vector;
     use std::type_name;
     use std::ascii;
     use sui::clock::{Self, Clock};
