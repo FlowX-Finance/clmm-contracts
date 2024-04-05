@@ -1,6 +1,5 @@
 module flowx_clmm::pool {
     use std::vector;
-    use std::option::{Self, Option};
     use std::type_name::{Self, TypeName};
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
@@ -42,6 +41,7 @@ module flowx_clmm::pool {
     const E_TICK_NOT_INITIALIZED: u64 = 8;
     const E_INVALID_REWARD_TIMESTAMP: u64 = 9;
     const E_POOL_REWARD_NOT_FOUND: u64 = 10;
+    const E_REWARD_INDEX_OUT_OF_BOUNDS: u64 = 11;
 
     struct PoolRewardCustodianDfKey<phantom T> has copy, drop, store {}
 
@@ -206,9 +206,16 @@ module flowx_clmm::pool {
         sender: address,
         pool_id: ID,
         reward_coin_type: TypeName,
-        started_at_seconds: u64,
+        started_at_seconds: u64
+    }
+
+    struct UpdatePoolRewardEmission has copy, drop, store {
+        sender: address,
+        pool_id: ID,
+        reward_coin_type: TypeName,
+        total_reward: u64,
         ended_at_seconds: u64,
-        initial_allocation: u64
+        reward_per_seconds: u128
     }
 
     public fun pool_id<X, Y>(self: &Pool<X, Y>): ID { object::id(self) }
@@ -252,6 +259,29 @@ module flowx_clmm::pool {
     public fun borrow_observations<X, Y>(self: &Pool<X, Y>): &vector<Observation> { &self.observations }
 
     public fun is_locked<X, Y>(self: &Pool<X, Y>): bool { self.locked }
+
+    public fun reward_length<X, Y>(self: &Pool<X, Y>): u64 { vector::length(&self.reward_infos) }
+
+    public fun reward_info_at<X, Y>(self: &Pool<X, Y>, i: u64): &PoolRewardInfo {
+        if (i >= reward_length(self)) {
+            abort E_REWARD_INDEX_OUT_OF_BOUNDS
+        };
+        vector::borrow(&self.reward_infos, i)
+    }
+
+    public fun reward_coin_type<X, Y>(self: &Pool<X, Y>, i: u64): TypeName { reward_info_at(self, i).reward_coin_type }
+
+    public fun reward_last_update_at<X, Y>(self: &Pool<X, Y>, i: u64): u64 { reward_info_at(self, i).last_update_time }
+
+    public fun reward_ended_at<X, Y>(self: &Pool<X, Y>, i: u64): u64 { reward_info_at(self, i).ended_at_seconds }
+
+    public fun total_reward<X, Y>(self: &Pool<X, Y>, i: u64): u64 { reward_info_at(self, i).total_reward }
+
+    public fun total_reward_allocated<X, Y>(self: &Pool<X, Y>, i: u64): u64 { reward_info_at(self, i).total_reward_allocated }
+
+    public fun reward_per_seconds<X, Y>(self: &Pool<X, Y>, i: u64): u128 { reward_info_at(self, i).reward_per_seconds }
+
+    public fun reward_growth_global<X, Y>(self: &Pool<X, Y>, i: u64): u128 { reward_info_at(self, i).reward_growth_global }
 
     public fun reserves<X, Y>(self: &Pool<X, Y>): (u64, u64) {
         (balance::value(&self.reserve_x), balance::value(&self.reserve_y))
@@ -796,16 +826,8 @@ module flowx_clmm::pool {
         check_lock(self);
         check_pool_match(self, position::pool_id(position));
 
-        let amount_x = if (amount_x_requested > position::coins_owed_x(position)) {
-            position::coins_owed_x(position)
-        } else {
-            amount_x_requested
-        };
-        let amount_y = if (amount_y_requested > position::coins_owed_y(position)) {
-            position::coins_owed_y(position)
-        } else {
-            amount_y_requested
-        };
+        let amount_x = math::min(amount_x_requested, position::coins_owed_x(position));
+        let amount_y = math::min(amount_y_requested, position::coins_owed_y(position));
 
         position::decrease_debt(position, amount_x, amount_y);
 
@@ -831,16 +853,8 @@ module flowx_clmm::pool {
         versioned::check_version_and_upgrade(versioned);
         check_lock(self);
 
-         let amount_x = if (amount_x_requested > self.protocol_fee_x) {
-            self.protocol_fee_x
-        } else {
-            amount_x_requested
-        };
-        let amount_y = if (amount_y_requested > self.protocol_fee_y) {
-            self.protocol_fee_y
-        } else {
-            amount_y_requested
-        };
+        let amount_x = math::min(amount_x_requested, self.protocol_fee_x);
+        let amount_y = math::min(amount_y_requested, self.protocol_fee_y);
         self.protocol_fee_x = self.protocol_fee_x - amount_x;
         self.protocol_fee_y = self.protocol_fee_y - amount_y;
 
@@ -852,6 +866,27 @@ module flowx_clmm::pool {
         });
 
         take(self, amount_x, amount_y)
+    }
+
+    public fun collect_pool_reward<X, Y, RewardCoinType>(
+        self: &mut Pool<X, Y>,
+        position: &mut Position,
+        amount_requested: u64,
+        versioned: &mut Versioned,
+        ctx: &TxContext
+    ): Balance<RewardCoinType> {
+        versioned::check_version_and_upgrade(versioned);
+        check_lock(self);
+        check_pool_match(self, position::pool_id(position));
+
+        let reward_info_at = find_reward_info_index<X, Y, RewardCoinType>(self);
+        let amount = math::min(amount_requested, position::coins_owed_reward(position, reward_info_at));
+        position::decrease_reward_debt(position, reward_info_at, amount);
+
+        safe_withdraw(
+            df::borrow_mut<PoolRewardCustodianDfKey<RewardCoinType>, Balance<RewardCoinType>>(&mut self.id, PoolRewardCustodianDfKey<RewardCoinType> {}),
+            amount
+        )
     }
 
     public fun set_protocol_fee_rate<X, Y>(
@@ -986,7 +1021,7 @@ module flowx_clmm::pool {
         check_lock(self);
 
         let current_timestamp = utils::to_seconds(clock::timestamp_ms(clock));
-        if (started_at_seconds <= current_timestamp || ended_at_seconds <= started_at_seconds) {
+        if (started_at_seconds <= current_timestamp) {
             abort E_INVALID_REWARD_TIMESTAMP
         };
 
@@ -1001,18 +1036,16 @@ module flowx_clmm::pool {
             reward_growth_global: 0
         };
         df::add(&mut self.id, PoolRewardCustodianDfKey<RewardCoinType> {}, balance::zero<RewardCoinType>());
+        vector::push_back(&mut self.reward_infos, reward_info);
 
         event::emit(InitializePoolReward {
             sender: tx_context::sender(ctx),
             pool_id: object::id(self),
             reward_coin_type,
-            started_at_seconds,
-            ended_at_seconds,
-            initial_allocation: balance::value(&allocated)
+            started_at_seconds
         });
 
-        update_pool_reward<X, Y, RewardCoinType>(self, allocated, ended_at_seconds, ctx);
-        vector::push_back(&mut self.reward_infos, reward_info);
+        update_pool_reward_emission<X, Y, RewardCoinType>(self, allocated, ended_at_seconds, ctx);
     }
 
     public fun increase_pool_reward<X, Y, RewardCoinType>(
@@ -1025,42 +1058,41 @@ module flowx_clmm::pool {
     ) {
         versioned::check_version_and_upgrade(versioned);
         check_lock(self);
-
         update_reward_infos(self, utils::to_seconds(clock::timestamp_ms(clock)));
-
-        update_pool_reward<X, Y, RewardCoinType>(self, allocated, 0, ctx);
+        update_pool_reward_emission<X, Y, RewardCoinType>(self, allocated, 0, ctx);
     }
 
-    public fun extend_timestamp_pool_reward<X, Y, RewardCoinType>(
+    public fun extend_pool_reward_timestamp<X, Y, RewardCoinType>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
-        extend_timstamp: u64,
+        timestamp: u64,
         versioned: &mut Versioned,
         clock: &Clock,
         ctx: &TxContext
     ) {
         versioned::check_version_and_upgrade(versioned);
         check_lock(self);
-
         update_reward_infos(self, utils::to_seconds(clock::timestamp_ms(clock)));
-
-        update_pool_reward<X, Y, RewardCoinType>(self, balance::zero<RewardCoinType>(), extend_timstamp, ctx);
+        update_pool_reward_emission<X, Y, RewardCoinType>(self, balance::zero<RewardCoinType>(), timestamp, ctx);
     }
 
-    fun update_pool_reward<X, Y, RewardCoinType>(
+    fun update_pool_reward_emission<X, Y, RewardCoinType>(
         self: &mut Pool<X, Y>,
         allocated: Balance<RewardCoinType>,
-        extend_timstamp: u64,
+        timestamp: u64,
         ctx: &TxContext
     ) {
+        let pool_id = object::id(self);
         let reward_info_at = find_reward_info_index<X, Y, RewardCoinType>(self);
-        if (option::is_none(&reward_info_at)) {
-            abort E_POOL_REWARD_NOT_FOUND
+        let reward_info = vector::borrow_mut(&mut self.reward_infos, reward_info_at);
+        let ended_at_seconds = reward_info.ended_at_seconds + timestamp;
+
+        if(ended_at_seconds <= reward_info.last_update_time) {
+            abort E_INVALID_REWARD_TIMESTAMP
         };
 
-        let reward_info = vector::borrow_mut(&mut self.reward_infos, option::destroy_some(reward_info_at));
         reward_info.total_reward = reward_info.total_reward + balance::value(&allocated);
-        reward_info.ended_at_seconds = reward_info.ended_at_seconds + extend_timstamp;
+        reward_info.ended_at_seconds = ended_at_seconds;
         reward_info.reward_per_seconds = full_math_u128::mul_div_floor(
             ((reward_info.total_reward - reward_info.total_reward_allocated) as u128),
             (constants::get_q64() as u128),
@@ -1070,6 +1102,15 @@ module flowx_clmm::pool {
             df::borrow_mut(&mut self.id, PoolRewardCustodianDfKey<RewardCoinType> {}),
             allocated
         );
+
+        event::emit(UpdatePoolRewardEmission {
+            sender: tx_context::sender(ctx),
+            pool_id,
+            reward_coin_type: reward_info.reward_coin_type,
+            total_reward: reward_info.total_reward,
+            ended_at_seconds: reward_info.ended_at_seconds,
+            reward_per_seconds: reward_info.reward_per_seconds
+        });
     }
 
     fun modify_position<X, Y>(
@@ -1227,16 +1268,14 @@ module flowx_clmm::pool {
         let (i, num_rewards) = (0, vector::length(&self.reward_infos));
         while(i < num_rewards) {
             let reward_info = vector::borrow_mut(&mut self.reward_infos, i);
+            i = i + 1;
 
             if (current_timestamp <= reward_info.last_update_time) {
                 continue
             };
 
-            let latest_update_timestamp = math::min(current_timestamp, reward_info.ended_at_seconds);
-
             if (self.liquidity != 0) {
-                let time_delta = latest_update_timestamp - reward_info.last_update_time;
-
+                let time_delta = math::min(current_timestamp, reward_info.ended_at_seconds) - reward_info.last_update_time;
                 let pending_reward = full_math_u128::full_mul((time_delta as u128), reward_info.reward_per_seconds);
                 let reward_growth_delta = pending_reward / (self.liquidity as u256);
                 reward_info.reward_growth_global = full_math_u128::wrapping_add(
@@ -1246,24 +1285,28 @@ module flowx_clmm::pool {
                 reward_info.total_reward_allocated = reward_info.total_reward_allocated + ((pending_reward / (constants::get_q64() as u256)) as u64);
                 vector::push_back(&mut reward_growths_global, reward_info.reward_growth_global);
             };
-            reward_info.last_update_time = latest_update_timestamp;
-            i = i + 1;
+            reward_info.last_update_time = current_timestamp;
         };
         reward_growths_global
     }
 
-    fun find_reward_info_index<X, Y, RewardCoinType>(self: &Pool<X, Y>): Option<u64> {
+    fun find_reward_info_index<X, Y, RewardCoinType>(self: &Pool<X, Y>): u64 {
         let (i, len) = (0, vector::length(&self.reward_infos));
-        let found = option::none();
+        let (found, at) = (false, i);
         while (i < len) {
             if (vector::borrow(&self.reward_infos, i).reward_coin_type == type_name::get<RewardCoinType>()) {
-                found = option::some(i);
+                (found, at) = (true, i);
                 break
             };
 
             i = i + 1;
         };
-        found
+
+        if (!found) {
+            abort E_POOL_REWARD_NOT_FOUND
+        };
+
+        at
     }
 
     fun check_pool_match<X, Y>(self: &Pool<X, Y>, id: ID) {
@@ -1284,8 +1327,8 @@ module flowx_clmm::pool {
         amount_y: u64
     ): (Balance<X>, Balance<Y>) {
         (
-            balance::split(&mut self.reserve_x, amount_x),
-            balance::split(&mut self.reserve_y, amount_y),
+            safe_withdraw(&mut self.reserve_x, amount_x),
+            safe_withdraw(&mut self.reserve_y, amount_y),
         )
     }
 
@@ -1296,6 +1339,17 @@ module flowx_clmm::pool {
     ) {
         balance::join(&mut self.reserve_x, payment_x);
         balance::join(&mut self.reserve_y, payment_y);
+    }
+    
+    fun safe_withdraw<T>(
+        balance: &mut Balance<T>,
+        amount: u64
+    ): Balance<T> {
+        if (amount > balance::value(balance)) {
+            balance::withdraw_all(balance)
+        } else {
+            balance::split(balance, amount)
+        }
     }
 
     #[test_only]
@@ -1331,6 +1385,16 @@ module flowx_clmm::pool {
         pool.fee_growth_global_x = fee_growth_global_x;
         pool.fee_growth_global_y = fee_growth_global_y;
     }
+
+    #[test_only]
+    public fun update_reward_infos_for_testing<X, Y>(self: &mut Pool<X, Y>, current_timestamp: u64): vector<u128> {
+        update_reward_infos(self, current_timestamp)
+    }
+
+    #[test_only]
+    public fun set_liquidity_for_testing<X, Y>(self: &mut Pool<X, Y>, liquidity: u128) {
+        self.liquidity = 100;
+    }
 }
 
 #[test_only]
@@ -1354,6 +1418,8 @@ module flowx_clmm::test_pool {
     use flowx_clmm::constants;
 
     struct USDC has drop {}
+    
+    struct FLX has drop {}
 
     #[test]
     fun test_initialize() {
@@ -3680,6 +3746,296 @@ module flowx_clmm::test_pool {
         );
         balance::destroy_for_testing(x_out);
         balance::destroy_for_testing(y_out);
+        pool::destroy_for_testing(pool);
+
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        flowx_clmm::admin_cap::destroy_for_testing(admin_cap);
+    }
+
+    #[test]
+    public fun test_update_reward_info() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let admin_cap = flowx_clmm::admin_cap::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        // let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 1), &clock, &ctx);
+
+        pool::initialize_pool_reward<SUI, USDC, FLX>(
+            &admin_cap, &mut pool, 100, 1100, balance::create_for_testing<FLX>(10000), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // before start time, nothing to update
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 50);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 0
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 150);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 150 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 100
+        pool::set_liquidity_for_testing(&mut pool, 100);
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 200);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 200 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 500 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100,
+            0
+        );
+
+        // current_timestamp greater than reward end time
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 1500);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 1500 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 9500 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100 + 10 * constants::get_q64() * 900 / 100,
+            0
+        );
+
+        pool::destroy_for_testing(pool);
+
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        flowx_clmm::admin_cap::destroy_for_testing(admin_cap);
+    }
+
+    #[test]
+    public fun test_increase_pool_reward() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let admin_cap = flowx_clmm::admin_cap::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        // let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 1), &clock, &ctx);
+
+        pool::initialize_pool_reward<SUI, USDC, FLX>(
+            &admin_cap, &mut pool, 100, 1100, balance::create_for_testing<FLX>(10000), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // before start time, nothing to update
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 50);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 0
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 150);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 150 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 100
+        pool::set_liquidity_for_testing(&mut pool, 100);
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 200);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 200 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 500 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100,
+            0
+        );
+
+        // increase pool reward by 5000
+        clock::set_for_testing(&mut clock, 300 * 1000);
+        pool::increase_pool_reward<SUI, USDC, FLX>(
+            &admin_cap, &mut pool, balance::create_for_testing(5000), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 300 &&
+            pool::total_reward(&pool, 0) == 15000 &&
+            pool::total_reward_allocated(&pool, 0) == 1500 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 311288806243848683520 &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100 + 10 * constants::get_q64() * 100 / 100,
+            0
+        );
+
+        // current_timestamp greater than reward end time
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 1500);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 1500 &&
+            pool::total_reward(&pool, 0) == 15000 &&
+            pool::total_reward_allocated(&pool, 0) == 15000 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 311288806243848683520 &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100 + 10 * constants::get_q64() * 100 / 100 + 311288806243848683520 * 800 / 100,
+            0
+        );
+
+        pool::destroy_for_testing(pool);
+
+        clock::destroy_for_testing(clock);
+        versioned::destroy_for_testing(versioned);
+        flowx_clmm::admin_cap::destroy_for_testing(admin_cap);
+    }
+
+    #[test]
+    public fun test_extend_pool_reward_timestamp() {
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let admin_cap = flowx_clmm::admin_cap::create_for_testing(&mut ctx);
+
+        let (fee_rate, tick_spacing) = (3000, 60);
+        // let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
+        let pool = pool::create_for_testing<SUI, USDC>(fee_rate, tick_spacing, &mut ctx);
+        pool::initialize(&mut pool, test_utils::encode_sqrt_price(1, 1), &clock, &ctx);
+
+        pool::initialize_pool_reward<SUI, USDC, FLX>(
+            &admin_cap, &mut pool, 100, 1100, balance::create_for_testing<FLX>(10000), &mut versioned, &clock, &ctx
+        );
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // before start time, nothing to update
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 50);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 100 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 0
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 150);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 150 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 0 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 0,
+            0
+        );
+
+        // pool liquidity is 100
+        pool::set_liquidity_for_testing(&mut pool, 100);
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 200);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 200 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 500 &&
+            pool::reward_ended_at(&pool, 0) == 1100 &&
+            pool::reward_per_seconds(&pool, 0) == 10 * constants::get_q64() &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100,
+            0
+        );
+
+        // extend pool reward timestamp by 1000
+        clock::set_for_testing(&mut clock, 300 * 1000);
+        pool::extend_pool_reward_timestamp<SUI, USDC, FLX>(
+            &admin_cap, &mut pool, 1000, &mut versioned, &clock, &ctx
+        );
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 300 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 1500 &&
+            pool::reward_ended_at(&pool, 0) == 2100 &&
+            pool::reward_per_seconds(&pool, 0) == 87109624792517327075 &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100 + 10 * constants::get_q64() * 100 / 100,
+            0
+        );
+
+        // current_timestamp greater than reward end time
+        let reward_growths_global = pool::update_reward_infos_for_testing(&mut pool, 2500);
+        assert!(
+            pool::reward_coin_type(&pool, 0) == std::type_name::get<FLX>() &&
+            pool::reward_last_update_at(&pool, 0) == 2500 &&
+            pool::total_reward(&pool, 0) == 10000 &&
+            pool::total_reward_allocated(&pool, 0) == 9999 &&
+            pool::reward_ended_at(&pool, 0) == 2100 &&
+            pool::reward_per_seconds(&pool, 0) == 87109624792517327075 &&
+            pool::reward_growth_global(&pool, 0) == 10 * constants::get_q64() * 50 / 100 + 10 * constants::get_q64() * 100 / 100 + 87109624792517327075 * 1800 / 100,
+            0
+        );
+
         pool::destroy_for_testing(pool);
 
         clock::destroy_for_testing(clock);

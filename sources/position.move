@@ -74,6 +74,36 @@ module flowx_clmm::position {
 
     public fun fee_growth_inside_y_last(self: &Position): u128 { self.fee_growth_inside_y_last }
 
+    public fun reward_growth_inside_last(self: &Position, i: u64): u128 {
+        let len = vector::length(&self.reward_infos);
+        if (i >= len) {
+            0
+        } else {
+            vector::borrow(&self.reward_infos, i).reward_growth_inside_last
+        }
+    }
+
+    public fun coins_owed_reward(self: &Position, i: u64): u64 {
+        let len = vector::length(&self.reward_infos);
+        if (i >= len) {
+            0
+        } else {
+            vector::borrow(&self.reward_infos, i).coins_owed_reward
+        }
+    }
+
+    fun try_borrow_mut_reward_info(self: &mut Position, i: u64): &mut PositionRewardInfo {
+        let len = vector::length(&self.reward_infos);
+        if (i >= len) {
+            vector::push_back(&mut self.reward_infos, PositionRewardInfo {
+                reward_growth_inside_last: 0,
+                coins_owed_reward: 0
+            });
+        };
+
+        vector::borrow_mut(&mut self.reward_infos, i)
+    }
+
     public(friend) fun open(
         pool_id: ID,
         fee_rate: u64,
@@ -126,6 +156,15 @@ module flowx_clmm::position {
         self.coins_owed_y = self.coins_owed_y - amount_y;
     }
 
+    public(friend) fun decrease_reward_debt(
+        self: &mut Position,
+        i: u64,
+        amount: u64
+    ) {
+        let reward_info = try_borrow_mut_reward_info(self, i);
+        reward_info.coins_owed_reward = reward_info.coins_owed_reward - amount;
+    }
+
     public(friend) fun update(
         self: &mut Position,
         liquidity_delta: I128,
@@ -164,27 +203,15 @@ module flowx_clmm::position {
             abort E_COINS_OWED_OVERFLOW
         };
 
+        update_reward_infos(self, reward_growths_inside);
         self.liquidity = liquidity_next;
         self.fee_growth_inside_x_last = fee_growth_inside_x;
         self.fee_growth_inside_y_last = fee_growth_inside_y;
         self.coins_owed_x = self.coins_owed_x + (coins_owed_x as u64);
         self.coins_owed_y = self.coins_owed_y + (coins_owed_y as u64);
-        update_reward_infos_internal(self, reward_growths_inside);
     }
 
-    fun try_get_reward_info(self: &mut Position, i: u64): &mut PositionRewardInfo {
-        let len = vector::length(&self.reward_infos);
-        if (i >= len) {
-            vector::push_back(&mut self.reward_infos, PositionRewardInfo {
-                reward_growth_inside_last: 0,
-                coins_owed_reward: 0
-            });
-        };
-
-        vector::borrow_mut(&mut self.reward_infos, i)
-    }
-
-    fun update_reward_infos_internal(
+    fun update_reward_infos(
         self: &mut Position,
         reward_growths_inside: vector<u128>
     ) {
@@ -192,7 +219,7 @@ module flowx_clmm::position {
         while(i < num_rewards) {
             let liquidity = self.liquidity;
             let reward_growth_inside = *vector::borrow(&reward_growths_inside, i);
-            let reward_info = try_get_reward_info(self, i);
+            let reward_info = try_borrow_mut_reward_info(self, i);
             let coins_owed_reward = full_math_u128::mul_div_floor(
                 full_math_u128::wrapping_sub(reward_growth_inside, reward_info.reward_growth_inside_last),
                 liquidity,

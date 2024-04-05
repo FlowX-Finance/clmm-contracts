@@ -76,9 +76,7 @@ module flowx_clmm::position_manager {
         ctx: &mut TxContext
     ): Position {
         versioned::check_version_and_upgrade(versioned);
-        if (!utils::is_ordered<X, Y>()) {
-            abort E_NOT_ORDERED
-        };
+        utils::check_order<X, Y>();
         tick::check_ticks(tick_lower_index, tick_upper_index);
 
         let pool = pool_manager::borrow_pool<X, Y>(pool_registry, fee_rate);
@@ -140,9 +138,7 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        if (!utils::is_ordered<X, Y>()) {
-            abort E_NOT_ORDERED
-        };
+        utils::check_order<X, Y>();
         utils::check_deadline(clock, deadline);
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         
@@ -196,10 +192,7 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &TxContext
     ) {
-        if (!utils::is_ordered<X, Y>()) {
-            abort E_NOT_ORDERED
-        };
-
+        utils::check_order<X, Y>();
         utils::check_deadline(clock, deadline);
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         let (amount_x, amount_y) = pool::modify_liquidity(
@@ -229,12 +222,9 @@ module flowx_clmm::position_manager {
         clock: &Clock,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
-        if (!utils::is_ordered<X, Y>()) {
-            abort E_NOT_ORDERED
-        };
-        if (amount_x_requested == 0 && amount_y_requested == 0) {
-            abort E_ZERO_COLLECT
-        };
+        utils::check_order<X, Y>();
+        utils::check_zero_amount(amount_x_requested);
+        utils::check_zero_amount(amount_y_requested);
 
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         if (position::liquidity(position) > 0) {
@@ -243,8 +233,32 @@ module flowx_clmm::position_manager {
             );
         };
         
-        let (collected, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
-        (coin::from_balance(collected, ctx), coin::from_balance(collectd_y, ctx))
+        let (collected_x, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
+        (coin::from_balance(collected_x, ctx), coin::from_balance(collectd_y, ctx))
+    }
+
+    public fun collect_pool_reward<X, Y, RewardCoinType>(
+        self: &mut PoolRegistry,
+        position: &mut Position,
+        amount_requested: u64,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ): Coin<RewardCoinType> {
+        utils::check_order<X, Y>();
+        utils::check_zero_amount(amount_requested);
+
+        let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
+        if (position::liquidity(position) > 0) {
+            pool::modify_liquidity(
+                pool, position, i128::zero(), balance::zero(), balance::zero(), versioned, clock, ctx
+            );
+        };
+        
+        coin::from_balance(
+            pool::collect_pool_reward<X, Y, RewardCoinType>(pool, position, amount_requested, versioned, ctx),
+            ctx
+        )
     }
 
     #[test_only]
