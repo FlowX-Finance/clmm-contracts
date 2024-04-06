@@ -248,7 +248,6 @@ module flowx_clmm::sqrt_price_math {
     #[test]
     public fun test_get_next_sqrt_price_from_input() {
         use flowx_clmm::test_utils;
-        use flowx_clmm::constants;
 
         let price = test_utils::encode_sqrt_price(1, 1);
         assert!(get_next_sqrt_price_from_input(price, 1, 0, true) == price, 0);
@@ -275,7 +274,6 @@ module flowx_clmm::sqrt_price_math {
     #[test]
     public fun test_get_next_sqrt_price_from_output() {
         use flowx_clmm::test_utils;
-        use flowx_clmm::constants;
 
         let price = 4722366482869645213696;
         let liquidity = 1024;

@@ -9,7 +9,6 @@ module flowx_clmm::tick {
     use flowx_clmm::constants;
     use flowx_clmm::liquidity_math;
     use flowx_clmm::full_math_u128;
-    use flowx_clmm::utils;
 
     friend flowx_clmm::pool;
 

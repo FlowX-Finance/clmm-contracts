@@ -235,6 +235,7 @@ module flowx_clmm::position {
 
             reward_info.reward_growth_inside_last = reward_growth_inside;
             reward_info.coins_owed_reward = reward_info.coins_owed_reward + (coins_owed_reward as u64);
+            i = i + 1;
         };
     }
 

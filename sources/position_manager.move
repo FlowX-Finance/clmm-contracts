@@ -20,8 +20,6 @@ module flowx_clmm::position_manager {
 
     const E_NOT_EMPTY_POSITION: u64 = 0;
     const E_INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1;
-    const E_ZERO_COLLECT: u64 = 2;
-    const E_NOT_ORDERED: u64 = 3;
 
     struct PositionRegistry has key, store {
         id: UID,
@@ -407,7 +405,7 @@ module flowx_clmm::test_position_manager {
             1000,
             &mut versioned,
             &clock,
-            &mut ctx
+            &ctx
         );
         assert!(position::liquidity(&position) == 75, 0);
         assert!(position::fee_rate(&position) == fee_rate, 0);
@@ -428,7 +426,7 @@ module flowx_clmm::test_position_manager {
             1000,
             &mut versioned,
             &clock,
-            &mut ctx
+            &ctx
         );
         assert!(position::liquidity(&position) == 0, 0);
         assert!(position::fee_rate(&position) == fee_rate, 0);
@@ -484,7 +482,7 @@ module flowx_clmm::test_position_manager {
             1000,
             &mut versioned,
             &clock,
-            &mut ctx
+            &ctx
         );
 
         position::destroy_for_testing(position);
@@ -531,7 +529,7 @@ module flowx_clmm::test_position_manager {
             1000,
             &mut versioned,
             &clock,
-            &mut ctx
+            &ctx
         );
         assert!(position::liquidity(&position) == 0, 0);
         assert!(position::fee_rate(&position) == fee_rate, 0);
