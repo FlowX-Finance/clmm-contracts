@@ -214,7 +214,7 @@ module flowx_clmm::tick_bitmap {
         let tick_bitmap = table::new<I32, u256>(&mut sui::tx_context::dummy());
         let (i, len) = (0, vector::length(&tick_indexs));
         while(i < len) {
-            flip_tick(&mut tick_bitmap, *vector::borrow(&mut tick_indexs, i), 1);
+            flip_tick(&mut tick_bitmap, *vector::borrow(&tick_indexs, i), 1);
             i = i + 1;
         };
         tick_bitmap

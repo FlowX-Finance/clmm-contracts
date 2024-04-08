@@ -100,7 +100,6 @@ module flowx_clmm::swap_math {
     #[test]
     public fun test_compute_swap_step() {
         use flowx_clmm::test_utils;
-        use flowx_clmm::constants;
         use flowx_clmm::sqrt_price_math;
 
         //exact amount in that gets capped at price target in one for zero

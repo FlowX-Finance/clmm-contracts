@@ -25,8 +25,9 @@ module flowx_clmm::swap_router {
             pool, true, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, true), versioned, clock, ctx
         );
         balance::destroy_zero(x_out);
-        pool::pay(pool, receipt, coin::into_balance(coin_in), balance::zero(), versioned, ctx);
-
+        let (amount_x_required, _) = pool::swap_receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::split(coin::balance_mut(&mut coin_in), amount_x_required), balance::zero(), versioned, ctx);
+        utils::refund(coin_in, tx_context::sender(ctx));
         y_out
     }
 
@@ -42,8 +43,9 @@ module flowx_clmm::swap_router {
             pool, false, true, coin::value(&coin_in), get_sqrt_price_limit(sqrt_price_limit, false), versioned, clock, ctx
         );
         balance::destroy_zero(y_out);
-        pool::pay(pool, receipt, balance::zero(), coin::into_balance(coin_in), versioned, ctx);
-
+        let (_, amount_y_required) = pool::swap_receipt_debts(&receipt);
+        pool::pay(pool, receipt, balance::zero(), balance::split(coin::balance_mut(&mut coin_in), amount_y_required), versioned, ctx);
+        utils::refund(coin_in, tx_context::sender(ctx));
         x_out
     }
 
@@ -199,7 +201,7 @@ module flowx_clmm::test_swap_router {
     use sui::balance;
     use sui::coin;
 
-    use flowx_clmm::i32::{Self, I32};
+    use flowx_clmm::i32::I32;
     use flowx_clmm::i128;
     use flowx_clmm::pool_manager::{Self, PoolRegistry};
     use flowx_clmm::versioned;
@@ -256,11 +258,11 @@ module flowx_clmm::test_swap_router {
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         let (reserve_x_before, reserve_y_before) = pool::reserves(
-            pool_manager::borrow_pool<USDC, SUI>(&mut pool_registry, fee_rate)
+            pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_exact_x_to_y<USDC, SUI>(
-            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &mut ctx
+            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -328,7 +330,7 @@ module flowx_clmm::test_swap_router {
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_exact_y_to_x<USDC, SUI>(
-            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &mut ctx
+            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)

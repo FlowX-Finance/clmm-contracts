@@ -3,6 +3,7 @@ module flowx_clmm::pool_manager {
     use sui::object::{Self, UID, ID};
     use sui::table::{Self, Table};
     use sui::tx_context::{Self, TxContext};
+    use sui::coin::{Self, Coin};
     use sui::dynamic_object_field::{Self as dof};
     use sui::event;
     use sui::transfer;
@@ -162,6 +163,79 @@ module flowx_clmm::pool_manager {
             abort E_FEE_RATE_ALREADY_ENABLED
         };
         enable_fee_rate_internal(self, fee_rate, tick_spacing, ctx);
+    }
+
+    public fun set_protocol_fee_rate<X, Y>(
+        admin_cap: &AdminCap,
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        protocol_fee_rate_x: u64,
+        protocol_fee_rate_y: u64,
+        versioned: &mut Versioned,
+        ctx: &mut TxContext
+    ) {
+        pool::set_protocol_fee_rate(
+            admin_cap, borrow_mut_pool<X, Y>(self, fee_rate), protocol_fee_rate_x, protocol_fee_rate_y, versioned, ctx
+        );
+    }
+
+    public fun collect_protocol_fee<X, Y>(
+        admin_cap: &AdminCap,
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        amount_x_requested: u64,
+        amount_y_requested: u64,
+        versioned: &mut Versioned,
+        ctx: &mut TxContext
+    ): (Coin<X>, Coin<Y>) {
+        let (collected_x, collected_y) = pool::collect_protocol_fee(
+            admin_cap, borrow_mut_pool<X, Y>(self, fee_rate), amount_x_requested, amount_y_requested, versioned, ctx
+        );
+        (coin::from_balance(collected_x, ctx), coin::from_balance(collected_y, ctx))
+    }
+
+    public fun initialize_pool_reward<X, Y, RewardCoinType>(
+        admin_cap: &AdminCap,
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        started_at_seconds: u64,
+        ended_at_seconds: u64,
+        allocated: Coin<RewardCoinType>,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        pool::initialize_pool_reward<X, Y, RewardCoinType>(
+            admin_cap, borrow_mut_pool<X, Y>(self, fee_rate), started_at_seconds, ended_at_seconds, coin::into_balance(allocated), versioned, clock, ctx
+        );
+    }
+
+    public fun increase_pool_reward<X, Y, RewardCoinType>(
+        admin_cap: &AdminCap,
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        allocated: Coin<RewardCoinType>,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        pool::increase_pool_reward<X, Y, RewardCoinType>(
+            admin_cap, borrow_mut_pool<X, Y>(self, fee_rate), coin::into_balance(allocated), versioned, clock, ctx
+        );
+    }
+
+    public fun extend_pool_reward_timestamp<X, Y, RewardCoinType>(
+        admin_cap: &AdminCap,
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        timestamp: u64,
+        versioned: &mut Versioned,
+        clock: &Clock,
+        ctx: &TxContext
+    ) {
+        pool::extend_pool_reward_timestamp<X, Y, RewardCoinType>(
+            admin_cap, borrow_mut_pool<X, Y>(self, fee_rate), timestamp, versioned, clock, ctx
+        );
     }
 
     fun enable_fee_rate_internal(
