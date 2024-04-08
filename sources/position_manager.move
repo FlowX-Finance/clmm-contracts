@@ -107,11 +107,7 @@ module flowx_clmm::position_manager {
         ctx: &TxContext
     ) {
         versioned::check_version_and_upgrade(versioned);
-        if (
-            position::liquidity(&position) != 0 ||
-            position::coins_owed_x(&position) != 0 ||
-            position::coins_owed_y(&position) != 0
-        ) {
+        if (!position::is_empty(&position)) {
             abort E_NOT_EMPTY_POSITION
         };
 

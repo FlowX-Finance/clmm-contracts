@@ -74,6 +74,8 @@ module flowx_clmm::position {
 
     public fun fee_growth_inside_y_last(self: &Position): u128 { self.fee_growth_inside_y_last }
 
+    public fun reward_length(self: &Position): u64 { vector::length(&self.reward_infos) }
+
     public fun reward_growth_inside_last(self: &Position, i: u64): u128 {
         let len = vector::length(&self.reward_infos);
         if (i >= len) {
@@ -90,6 +92,20 @@ module flowx_clmm::position {
         } else {
             vector::borrow(&self.reward_infos, i).coins_owed_reward
         }
+    }
+
+    public fun is_empty(self: &Position): bool {
+        let reward_empty = true;
+        let (i, reward_len) = (0, vector::length(&self.reward_infos));
+        while(i < reward_len) {
+            if (vector::borrow(&self.reward_infos, i).coins_owed_reward != 0) {
+                reward_empty = false;
+                break
+            };
+            i = i + 1;
+        };
+
+        (self.liquidity == 0 && self.coins_owed_x == 0 && self.coins_owed_y == 0 && reward_empty)
     }
 
     fun try_borrow_mut_reward_info(self: &mut Position, i: u64): &mut PositionRewardInfo {
