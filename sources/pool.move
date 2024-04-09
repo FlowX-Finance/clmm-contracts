@@ -335,6 +335,9 @@ module flowx_clmm::pool {
         pool
     }
 
+    /// Sets the initial price for the pool
+    /// Price is represented as a sqrt(amount_coin_y/amount_coin_x) Q64.64 value
+    /// @param sqrt_price the initial sqrt price of the pool as a Q64.64
     public fun initialize<X, Y>(
         self: &mut Pool<X, Y>,
         sqrt_price: u128,
@@ -363,6 +366,16 @@ module flowx_clmm::pool {
         });
     }
 
+    /// Modify the liquidity for the given pool. Poke by calling with a zero liquidity_delta
+    /// @param self The clmm pool
+    /// @param position The user position
+    /// @param liquidity_delta The amount of liquidity to change
+    /// @param x_in The coin that pay for operations add liquidity in coin_x (should be zero coin when burning liquidity)
+    /// @param y_in The coin that pay for operations add liquidity in coin_y (should be zero coin when burning liquidity)
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object
+    /// @return The amount of coin_x that was paid to mint the given amount of liquidity (is refunded when burning the given amount of liquidity)
+    /// @return The amount of coin_y that was paid to mint the given amount of liquidity (is refunded when burning the given amount of liquidity)
     public fun modify_liquidity<X, Y>(
         self: &mut Pool<X, Y>,
         position: &mut Position,
@@ -404,6 +417,20 @@ module flowx_clmm::pool {
         (amount_x, amount_y)
     }
 
+    /// Swap coin_x for coin_y, or coin_y for coin_x
+    /// There is no way in Move to pass calldata and make dynamic calls
+    /// To make the execution into a single transaction, function must return a resource
+    /// that cannot be copied, cannot be stored, cannot be dropped
+    /// @param self The clmm pool object
+    /// @param x_for_y The direction of the swap, true for coin_x for coin_y, false for coin_y for coin_x
+    /// @param exact_in Whether the input is exactly swapped
+    /// @param amount_specified The amount of the swap
+    /// @param sqrt_price_limit The sqrt price limit.
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object
+    /// @return The balance of coin swapped in coin_x (should be zero balance when swapping coin_x for coin_y)
+    /// @return The balance of coin swapped in coin_y (should be zero balance when swapping coin_y for coin_x)
+    /// @return A receipt of the swap transaction
     public fun swap<X, Y>(
         self: &mut Pool<X, Y>,
         x_for_y: bool,
@@ -673,6 +700,12 @@ module flowx_clmm::pool {
         (x_out, y_out, receipt)
     }
 
+    /// Pay for the receipt of the swap transaction
+    /// @param self The clmm pool object
+    /// @param receipt A receipt of the swap transaction
+    /// @param payment_x The coin that pay for operations flash loan in coin_x
+    /// @param payment_y The coin that pay for operations flash loan in coin_x
+    /// @param versioned The versioned object to check package version
     public fun pay<X, Y>(
         self: &mut Pool<X, Y>,
         receipt: SwapReceipt,
@@ -707,6 +740,18 @@ module flowx_clmm::pool {
         });
     }
 
+    /// Flash loan coin_x and coin_y from pool
+    /// There is no way in Move to pass calldata and make dynamic calls
+    /// To make the execution into a single transaction, function must return a resource
+    /// that cannot be copied, cannot be stored, cannot be dropped
+    /// @param self The clmm pool object
+    /// @param amount_x The amount of coin_x to send
+    /// @param amount_y The amount of coin_y to send
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object
+    /// @return The balance of coin loaned in coin_x
+    /// @return The balance of coin loaned in coin_y
+    /// @return A receipt of the flash loan transaction
     public fun flash<X, Y>(
         self: &mut Pool<X, Y>,
         amount_x: u64,
@@ -757,6 +802,12 @@ module flowx_clmm::pool {
         )
     }
 
+    /// Repay for the receipt of the flash loan transaction
+    /// @param self The clmm pool object
+    /// @param receipt A receipt of the flash loan transaction
+    /// @param payment_x The coin that pay for operations flash loan in coin_x
+    /// @param payment_y The coin that pay for operations flash loan in coin_x
+    /// @param versioned The versioned object to check package version
     public fun repay<X, Y>(
         self: &mut Pool<X, Y>,
         receipt: FlashReceipt,
@@ -822,6 +873,14 @@ module flowx_clmm::pool {
         });
     }
 
+    /// Collects coins owed to a position
+    /// @param self The clmm pool object
+    /// @param position The user position object
+    /// @param amount_x_requested How much coin_x should be withdrawn from the fees owed
+    /// @param amount_y_requested How much coin_y should be withdrawn from the fees owed
+    /// @param versioned The versioned object to check package version
+    /// @return The balance of fees collected in coin_x
+    /// @return The balance of fees collected in coin_y
     public fun collect<X, Y>(
         self: &mut Pool<X, Y>,
         position: &mut Position,
@@ -850,6 +909,14 @@ module flowx_clmm::pool {
         take(self, amount_x, amount_y)
     }
 
+    /// Collects protocol fee accrued to the pool
+    /// @param _ The admin cap object
+    /// @param self The clmm pool object
+    /// @param amount_x_requested How much coin_x should be withdrawn from the fees owed
+    /// @param amount_y_requested How much coin_y should be withdrawn from the fees owed
+    /// @param versioned The versioned object to check package version
+    /// @return The balance of fees collected in coin_x
+    /// @return The balance of fees collected in coin_y
     public fun collect_protocol_fee<X, Y>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
@@ -876,6 +943,12 @@ module flowx_clmm::pool {
         take(self, amount_x, amount_y)
     }
 
+    /// Collects rewards owed to a position
+    /// @param self The clmm pool object
+    /// @param position The user position object
+    /// @param amount_requested How much reward_coin should be withdrawn from the rewards owed
+    /// @param versioned The versioned object to check package version
+    /// @return The balance of rewards collected in reward_coin
     public fun collect_pool_reward<X, Y, RewardCoinType>(
         self: &mut Pool<X, Y>,
         position: &mut Position,
@@ -906,6 +979,12 @@ module flowx_clmm::pool {
         )
     }
 
+    /// Set the denominator of the protocol's % share of the fees
+    /// @param _ The admin cap object
+    /// @param self The clmm pool object
+    /// @param protocol_fee_rate_x New protocol fee for coin_x of the pool
+    /// @param protocol_fee_rate_y New protocol fee for coin_y of the pool
+    /// @param versioned The versioned object to check package version
     public fun set_protocol_fee_rate<X, Y>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
@@ -935,6 +1014,10 @@ module flowx_clmm::pool {
         });
     }
     
+    /// Increase the maximum number of price and liquidity observations that this pool will store
+    /// @param self The clmm pool object
+    /// @param observation_cardinality_next The desired minimum number of observations for the pool to store
+    /// @param versioned The versioned object to check package version
     public fun increase_observation_cardinality_next<X, Y>(
         self: &mut Pool<X, Y>,
         observation_cardinality_next: u64,
@@ -957,13 +1040,21 @@ module flowx_clmm::pool {
         })
     }
 
+    /// Returns a snapshot of the tick cumulative, seconds per liquidity and seconds inside a tick range
+    /// @param self The clmm pool object
+    /// @param tick_lower_index The lower tick of the range
+    /// @param tick_upper_index The upper tick of the range
+    /// @param clock The clock object
+    /// @return tick_cumulative_inside The snapshot of the tick accumulator for the range
+    /// @return The snapshot of seconds per liquidity for the range
+    /// @return The snapshot of seconds per liquidity for the range
     public fun snapshot_cumulatives_inside<X, Y>(
         self: &Pool<X, Y>,
         tick_lower_index: I32,
         tick_upper_index: I32,
         clock: &Clock
     ): (I64, u256, u64) {
-        tick::check_ticks(tick_lower_index, tick_upper_index);
+        tick::check_ticks(tick_lower_index, tick_upper_index, self.tick_spacing);
 
         if (!tick::is_initialized(&self.ticks, tick_lower_index) || !tick::is_initialized(&self.ticks, tick_upper_index)) {
             abort E_TICK_NOT_INITIALIZED
@@ -1008,6 +1099,12 @@ module flowx_clmm::pool {
         }
     }
 
+    /// Returns the cumulative tick and liquidity as of each timestamp `seconds_agos` from the current timestamp
+    /// @param self The clmm pool object
+    /// @param seconds_agos From how long ago each cumulative tick and liquidity value should be returned
+    /// @param clock The clock object
+    /// @return Cumulative tick values as of each `seconds_agos` from the current timestamp
+    /// @return Cumulative seconds per liquidity-in-range value as of each `seconds_agos` from the timestamp
     public fun observe<X, Y>(
         self: &Pool<X, Y>,
         seconds_agos: vector<u64>,
@@ -1024,6 +1121,14 @@ module flowx_clmm::pool {
         )
     }
 
+    /// Sets the initial reward for the pool
+    /// @param _ The admin cap object
+    /// @param self The clmm pool object
+    /// @param started_at_seconds Reward allocation start time
+    /// @param ended_at_seconds Reward allocation end time
+    /// @param allocated The coin that pay for operations allocate reward
+    /// @param versioned The versioned object for check package version
+    /// @param clock The clock object
     public fun initialize_pool_reward<X, Y, RewardCoinType>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
@@ -1065,6 +1170,13 @@ module flowx_clmm::pool {
         update_pool_reward_emission<X, Y, RewardCoinType>(self, allocated, ended_at_seconds, ctx);
     }
 
+    /// Increases the amount of rewards allocated to the pool
+    /// This means that the old reward must be settled
+    /// @param _ The admin cap object
+    /// @param self The clmm pool object
+    /// @param allocated The coin that pay for operations allocate reward
+    /// @param versioned The versioned object for check package version
+    /// @param clock The clock object
     public fun increase_pool_reward<X, Y, RewardCoinType>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
@@ -1079,6 +1191,13 @@ module flowx_clmm::pool {
         update_pool_reward_emission<X, Y, RewardCoinType>(self, allocated, 0, ctx);
     }
 
+    /// Extends reward allocation time
+    /// This means that the old reward must be settled
+    /// @param _ The admin cap object
+    /// @param self The clmm pool object
+    /// @param timestamp How long is the reward allocation period extended?
+    /// @param versioned The versioned object for check package version
+    /// @param clock The clock object
     public fun extend_pool_reward_timestamp<X, Y, RewardCoinType>(
         _: &AdminCap,
         self: &mut Pool<X, Y>,
@@ -1093,6 +1212,12 @@ module flowx_clmm::pool {
         update_pool_reward_emission<X, Y, RewardCoinType>(self, balance::zero<RewardCoinType>(), timestamp, ctx);
     }
 
+    /// Updates the reward emissions based on the amount of reward remaining and the remaining allocation time
+    /// @param self The clmm pool object
+    /// @param allocated The coin that pay for operations allocate reward
+    /// @param timestamp How long is the reward allocation period extended?
+    /// @param versioned The versioned object for check package version
+    /// @param clock The clock object
     fun update_pool_reward_emission<X, Y, RewardCoinType>(
         self: &mut Pool<X, Y>,
         allocated: Balance<RewardCoinType>,
@@ -1130,6 +1255,13 @@ module flowx_clmm::pool {
         });
     }
 
+    /// Effect some changes to a position including: liquidity, fee growths and reward growths
+    /// @param pool The clmm pool object
+    /// @param position The user position
+    /// @param liquidity_delta The amount of liquidity to change
+    /// @param clock The clock object
+    /// @return The amount of coin_x that was paid to mint the given amount of liquidity (is refunded when burning the given amount of liquidity)
+    /// @return The amount of coin_y that was paid to mint the given amount of liquidity (is refunded when burning the given amount of liquidity)
     fun modify_position<X, Y>(
         pool: &mut Pool<X, Y>,
         position: &mut Position,
@@ -1200,7 +1332,8 @@ module flowx_clmm::pool {
             (0, 0)
         }
     }
-
+    
+    /// Updates a position with the given liquidity delta
     fun update_position<X, Y>(
         pool: &mut Pool<X, Y>,
         position: &mut Position,
@@ -1280,6 +1413,8 @@ module flowx_clmm::pool {
         };
     }
 
+    /// Updates pool reward variables including: total reward allocated, reward growth global and last update time
+    /// Returns reward_growths_global The all-time rewards growth, per unit of liquidity
     fun update_reward_infos<X, Y>(self: &mut Pool<X, Y>, current_timestamp: u64): vector<u128> {
         let reward_growths_global = vector::empty<u128>();
         let (i, num_rewards) = (0, vector::length(&self.reward_infos));
@@ -1356,6 +1491,7 @@ module flowx_clmm::pool {
         balance::join(&mut self.reserve_y, payment_y);
     }
     
+    /// Safe withdraw function, just in case if rounding error causes pool to not have enough coins.
     fun safe_withdraw<T>(
         balance: &mut Balance<T>,
         amount_requested: u64

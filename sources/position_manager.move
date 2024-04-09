@@ -75,9 +75,10 @@ module flowx_clmm::position_manager {
     ): Position {
         versioned::check_version_and_upgrade(versioned);
         utils::check_order<X, Y>();
-        tick::check_ticks(tick_lower_index, tick_upper_index);
 
         let pool = pool_manager::borrow_pool<X, Y>(pool_registry, fee_rate);
+        tick::check_ticks(tick_lower_index, tick_upper_index, pool::tick_spacing(pool));
+
         let position = position::open(
             object::id(pool),
             pool::swap_fee_rate(pool),

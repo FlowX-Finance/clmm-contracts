@@ -3,6 +3,12 @@ module flowx_clmm::bit_math {
 
     const E_UNDERFLOW: u64 = 0;
 
+    /// Returns the index of the most significant bit of the number,
+    ///     where the least significant bit is at index 0 and the most significant bit is at index 255
+    /// The function satisfies the property:
+    ///     x >= 2**get_most_significant_bit(x) and x < 2**(get_most_significant_bit(x)+1)
+    /// @param x the value for which to compute the most significant bit, must be greater than 0
+    /// @return the index of the most significant bit
     public fun get_most_significant_bit(x: u256): u8 {
         assert!(x > 0, E_UNDERFLOW);
 
@@ -42,6 +48,12 @@ module flowx_clmm::bit_math {
         r
     }
 
+    /// Returns the index of the least significant bit of the number,
+    ///     where the least significant bit is at index 0 and the most significant bit is at index 255
+    /// The function satisfies the property:
+    ///     (x & 2**get_least_significant_bit(x)) != 0 and (x & (2**(get_least_significant_bit(x)) - 1)) == 0)
+    /// @param x the value for which to compute the least significant bit, must be greater than 0
+    /// @return r the index of the least significant bit
     public fun get_least_significant_bit(x: u256): u8 {
         assert!(x > 0, E_UNDERFLOW);
 
