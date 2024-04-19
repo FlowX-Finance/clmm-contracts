@@ -218,7 +218,7 @@ module flowx_clmm::pool {
         reward_per_seconds: u128
     }
 
-    struct CollectPoolRewrad has copy, drop, store {
+    struct CollectPoolReward has copy, drop, store {
         sender: address,
         pool_id: ID,
         position_id: ID,
@@ -965,7 +965,7 @@ module flowx_clmm::pool {
         let amount = math::min(amount_requested, position::coins_owed_reward(position, reward_info_at));
         position::decrease_reward_debt(position, reward_info_at, amount);
 
-        event::emit(CollectPoolRewrad {
+        event::emit(CollectPoolReward {
             sender: tx_context::sender(ctx),
             pool_id,
             position_id: object::id(position),
