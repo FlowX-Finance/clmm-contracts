@@ -236,17 +236,17 @@ module flowx_clmm::position_manager {
             );
         };
         
-        let (collected_x, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
+        let (collected_x, collected_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
 
          event::emit(Collect {
             sender: tx_context::sender(ctx),
-            pool_id: object::id(self),
+            pool_id: object::id(pool),
             position_id: object::id(position),
             amount_x: balance::value(&collected_x),
-            amount_y: balance::value(&collectd_y)
+            amount_y: balance::value(&collected_y)
         });
 
-        (coin::from_balance(collected_x, ctx), coin::from_balance(collectd_y, ctx))
+        (coin::from_balance(collected_x, ctx), coin::from_balance(collected_y, ctx))
     }
 
     public fun collect_pool_reward<X, Y, RewardCoinType>(
