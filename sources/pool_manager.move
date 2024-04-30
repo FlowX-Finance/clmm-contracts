@@ -136,9 +136,9 @@ module flowx_clmm::pool_manager {
     ) {
         create_pool<X, Y>(self, fee_rate, versioned, ctx);
         if (utils::is_ordered<X, Y>()) {
-            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, clock, ctx);
+            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, versioned, clock, ctx);
         } else {
-            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, clock, ctx);
+            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, versioned, clock, ctx);
         };
     }
 

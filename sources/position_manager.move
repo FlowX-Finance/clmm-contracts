@@ -57,6 +57,14 @@ module flowx_clmm::position_manager {
         amount_y: u64
     }
 
+    struct Collect has copy, drop, store {
+        sender: address,
+        pool_id: ID,
+        position_id: ID,
+        amount_x: u64,
+        amount_y: u64
+    }
+
     fun init(ctx: &mut TxContext) {
         transfer::share_object(PositionRegistry {
             id: object::new(ctx),
@@ -229,6 +237,15 @@ module flowx_clmm::position_manager {
         };
         
         let (collected_x, collectd_y) = pool::collect(pool, position, amount_x_requested, amount_y_requested, versioned, ctx);
+
+         event::emit(Collect {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(self),
+            position_id: object::id(position),
+            amount_x: balance::value(&collected_x),
+            amount_y: balance::value(&collectd_y)
+        });
+
         (coin::from_balance(collected_x, ctx), coin::from_balance(collectd_y, ctx))
     }
 
