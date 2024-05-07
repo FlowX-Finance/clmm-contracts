@@ -112,10 +112,10 @@ module flowx_clmm::pool_manager {
     public fun create_pool<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &mut TxContext
     ) {
-        versioned::check_version_and_upgrade(versioned);
+        versioned::check_version(versioned);
         if (!table::contains(&self.fee_amount_tick_spacing, fee_rate)) {
             abort E_FEE_RATE_NOT_ENABLED
         };
@@ -130,7 +130,7 @@ module flowx_clmm::pool_manager {
         self: &mut PoolRegistry,
         fee_rate: u64,
         sqrt_price: u128,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
@@ -147,10 +147,10 @@ module flowx_clmm::pool_manager {
         self: &mut PoolRegistry,
         fee_rate: u64,
         tick_spacing: u32,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &TxContext
     ) {
-        versioned::check_version_and_upgrade(versioned);
+        versioned::check_version(versioned);
         if (fee_rate >= 1_000_000) {
             abort E_INVALID_FEE_RATE
         };
@@ -171,7 +171,7 @@ module flowx_clmm::pool_manager {
         fee_rate: u64,
         protocol_fee_rate_x: u64,
         protocol_fee_rate_y: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &mut TxContext
     ) {
         pool::set_protocol_fee_rate(
@@ -185,7 +185,7 @@ module flowx_clmm::pool_manager {
         fee_rate: u64,
         amount_x_requested: u64,
         amount_y_requested: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
         let (collected_x, collected_y) = pool::collect_protocol_fee(
@@ -201,7 +201,7 @@ module flowx_clmm::pool_manager {
         started_at_seconds: u64,
         ended_at_seconds: u64,
         allocated: Coin<RewardCoinType>,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &TxContext
     ) {
@@ -215,7 +215,7 @@ module flowx_clmm::pool_manager {
         self: &mut PoolRegistry,
         fee_rate: u64,
         allocated: Coin<RewardCoinType>,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &TxContext
     ) {
@@ -229,7 +229,7 @@ module flowx_clmm::pool_manager {
         self: &mut PoolRegistry,
         fee_rate: u64,
         timestamp: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &TxContext
     ) {

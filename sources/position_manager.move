@@ -20,6 +20,7 @@ module flowx_clmm::position_manager {
 
     const E_NOT_EMPTY_POSITION: u64 = 0;
     const E_INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1;
+    const E_ZERO_AMOUNT: u64 = 2;
 
     struct PositionRegistry has key, store {
         id: UID,
@@ -78,10 +79,10 @@ module flowx_clmm::position_manager {
         fee_rate: u64,
         tick_lower_index: I32,
         tick_upper_index: I32,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &mut TxContext
     ): Position {
-        versioned::check_version_and_upgrade(versioned);
+        versioned::check_version(versioned);
         utils::check_order<X, Y>();
 
         let pool = pool_manager::borrow_pool<X, Y>(pool_registry, fee_rate);
@@ -112,10 +113,10 @@ module flowx_clmm::position_manager {
     public fun close_position(
         self: &mut PositionRegistry,
         position: Position,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &TxContext
     ) {
-        versioned::check_version_and_upgrade(versioned);
+        versioned::check_version(versioned);
         if (!position::is_empty(&position)) {
             abort E_NOT_EMPTY_POSITION
         };
@@ -137,7 +138,7 @@ module flowx_clmm::position_manager {
         amount_x_min: u64,
         amount_y_min: u64,
         deadline: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
@@ -191,7 +192,7 @@ module flowx_clmm::position_manager {
         amount_x_min: u64,
         amount_y_min: u64,
         deadline: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &TxContext
     ) {
@@ -221,13 +222,14 @@ module flowx_clmm::position_manager {
         position: &mut Position,
         amount_x_requested: u64,
         amount_y_requested: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &mut TxContext
     ): (Coin<X>, Coin<Y>) {
         utils::check_order<X, Y>();
-        utils::check_zero_amount(amount_x_requested);
-        utils::check_zero_amount(amount_y_requested);
+        if (amount_x_requested == 0 && amount_y_requested == 0) {
+            abort E_ZERO_AMOUNT
+        };
 
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         if (position::liquidity(position) > 0) {
@@ -253,12 +255,14 @@ module flowx_clmm::position_manager {
         self: &mut PoolRegistry,
         position: &mut Position,
         amount_requested: u64,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         clock: &Clock,
         ctx: &mut TxContext
     ): Coin<RewardCoinType> {
         utils::check_order<X, Y>();
-        utils::check_zero_amount(amount_requested);
+        if (amount_requested == 0) {
+            abort E_ZERO_AMOUNT
+        };
 
         let pool = pool_manager::borrow_mut_pool<X, Y>(self, position::fee_rate(position));
         if (position::liquidity(position) > 0) {
@@ -294,7 +298,7 @@ module flowx_clmm::position_manager {
         fee_rate: u64,
         tick_lower_index: I32,
         tick_upper_index: I32,
-        versioned: &mut Versioned,
+        versioned: &Versioned,
         ctx: &mut TxContext
     ): Position {
         open_position<X, Y>(position_registry, pool_registry, fee_rate, tick_lower_index, tick_upper_index, versioned, ctx)

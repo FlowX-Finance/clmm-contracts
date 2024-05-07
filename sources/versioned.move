@@ -37,13 +37,6 @@ module flowx_clmm::versioned {
         }
     }
 
-    public(friend) fun check_version_and_upgrade(self: &mut Versioned) {
-        if (self.version < VERSION) {
-            ugrade_internal(self);
-        };
-        check_version(self);
-    }
-
     public fun upgrade(_: &AdminCap, self: &mut Versioned) {
         assert!(self.version < VERSION, E_NOT_UPGRADED);
         ugrade_internal(self);
