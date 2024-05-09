@@ -47,9 +47,9 @@ module flowx_clmm::position {
     fun init(otw: POSITION, ctx: &mut TxContext) {
         let publisher = package::claim(otw, ctx);
         let display = display::new<Position>(&publisher, ctx);
-        display::add(&mut display, utf8(b"name"), utf8(b"Flowx Position's NFT"));
-        display::add(&mut display, utf8(b"description"), utf8(b"Flowx Position's NFT"));
-        display::add(&mut display, utf8(b"image_url"), utf8(b""));
+        display::add(&mut display, utf8(b"name"), utf8(b"FlowX CLMM Liquidity Positions"));
+        display::add(&mut display, utf8(b"description"), utf8(b"This NFT represents a liquidity position in FlowX CLMM. The owner of this NFT can modify or redeem the position."));
+        display::add(&mut display, utf8(b"image_url"), utf8(b"https://ipfs.io/ipfs/QmV3S91uDAPJAcqMNed3R6JyAXKnbidgNdHGhnwU5LyUDZ"));
         display::update_version(&mut display);
 
         transfer::public_transfer(display, tx_context::sender(ctx));
