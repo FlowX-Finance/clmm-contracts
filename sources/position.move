@@ -214,7 +214,7 @@ module flowx_clmm::position {
 
         if (
             !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64)) ||
-            !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64))
+            !full_math_u64::add_check(self.coins_owed_y, (coins_owed_y as u64))
         ) {
             abort E_COINS_OWED_OVERFLOW
         };
