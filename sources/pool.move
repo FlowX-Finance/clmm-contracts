@@ -1019,13 +1019,15 @@ module flowx_clmm::pool {
         ) {
             abort E_INVALID_PROTOCOL_FEE_RATE
         };
+
+        let protocol_fee_rate_old = self.protocol_fee_rate;
         self.protocol_fee_rate = protocol_fee_rate_x + (protocol_fee_rate_y << 4);
 
         event::emit(SetProtocolFeeRate {
             sender: tx_context::sender(ctx),
             pool_id: object::id(self),
-            protocol_fee_rate_x_old: self.protocol_fee_rate % 16,
-            protocol_fee_rate_y_old: self.protocol_fee_rate >> 4,
+            protocol_fee_rate_x_old: protocol_fee_rate_old % 16,
+            protocol_fee_rate_y_old: protocol_fee_rate_old >> 4,
             protocol_fee_rate_x_new: protocol_fee_rate_x,
             protocol_fee_rate_y_new: protocol_fee_rate_y,
         });
