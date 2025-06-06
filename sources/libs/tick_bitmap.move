@@ -50,6 +50,14 @@ module flowx_clmm::tick_bitmap {
         *word = *word ^ mask;
     }
 
+    /// Returns the next initialized tick contained in the same word (or adjacent word) as the tick that is either
+    /// to the left (less than or equal to) or right (greater than) of the given tick
+    /// @param self A table is a map-like collection to compute the next initialized tick
+    /// @param tick The starting tick
+    /// @param tick_spacing The spacing between usable ticks
+    /// @param lte Whether to search for the next initialized tick to the left (less than or equal to the starting tick)
+    /// @return The next initialized or uninitialized tick up to 256 ticks away from the current tick
+    /// @return Whether the next tick is initialized, as the function only searches within up to 256 ticks
     public fun next_initialized_tick_within_one_word(
         self: &Table<I32, u256>,
         tick: I32,

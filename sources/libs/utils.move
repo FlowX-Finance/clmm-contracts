@@ -10,7 +10,6 @@ module flowx_clmm::utils {
     const E_EXPIRED: u64 = 0;
     const E_IDENTICAL_COIN: u64 = 1;
     const E_NOT_ORDERED: u64 = 2;
-    const E_ZERO_AMOUNT: u64 = 3;
 
     public fun check_deadline(clock: &Clock, deadline: u64) {
         if (deadline < clock::timestamp_ms(clock)) {
@@ -31,12 +30,6 @@ module flowx_clmm::utils {
     public fun check_order<X, Y>() {
         if (!is_ordered<X, Y>()) {
             abort E_NOT_ORDERED
-        };
-    }
-
-    public fun check_zero_amount(amount: u64) {
-        if (amount == 0) {
-            abort E_ZERO_AMOUNT
         };
     }
 

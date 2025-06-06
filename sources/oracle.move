@@ -5,8 +5,6 @@ module flowx_clmm::oracle {
     use flowx_clmm::i64::{Self, I64};
     use flowx_clmm::math_u256;
 
-    friend flowx_clmm::pool;
-    
     const E_NOT_INITIALIZED: u64 = 0;
     const E_OLDEST_OBSERVATION: u64 = 1;
     const E_EXCEEDED_OBSERVATION_CAP: u64 = 2;
@@ -37,7 +35,14 @@ module flowx_clmm::oracle {
 
     public fun is_initialized(self: &Observation): bool { self.initialized }
 
-    public(friend) fun transform(
+    /// Transforms a previous observation into a new observation, given the passage of time and the current tick and liquidity values
+    /// @dev timestamp_s must be chronologically equal to or greater than last.timestamp_s
+    /// @param last The specified observation to be transformed
+    /// @param timestamp_s The timestamp of the new observation
+    /// @param tick_index The active tick at the time of the new observation
+    /// @param liquidity The total in-range liquidity at the time of the new observation
+    /// @return Observation The newly populated observation
+    public fun transform(
         last: &Observation,
         timestamp_s: u64,
         tick_index: I32,
@@ -66,7 +71,12 @@ module flowx_clmm::oracle {
         }
     }
 
-    public(friend) fun initialize(self: &mut vector<Observation>, timestamp_s: u64): (u64, u64) {
+    /// Initialize the oracle array by writing the first slot. Called once for the lifecycle of the observations array
+    /// @param self The stored oracle array
+    /// @param timestamp_s The time of the oracle initialization
+    /// @return The number of populated elements in the oracle array
+    /// @return The new length of the oracle array, independent of population
+    public fun initialize(self: &mut vector<Observation>, timestamp_s: u64): (u64, u64) {
         vector::push_back(self, Observation {
             timestamp_s,
             tick_cumulative: i64::zero(),
@@ -77,7 +87,20 @@ module flowx_clmm::oracle {
         (1, 1)
     }
 
-    public(friend) fun write(
+    /// Writes an oracle observation to the array
+    /// Writable at most once per timstamp. Index represents the most recently written element. cardinality and index must be tracked externally.
+    /// If the index is at the end of the allowable array length (according to cardinality), and the next cardinality
+    /// is greater than the current one, cardinality may be increased. This restriction is created to preserve ordering.
+    /// @param self The stored oracle array
+    /// @param index The index of the observation that was most recently written to the observations array
+    /// @param time The timestamp of the new observation
+    /// @param tick_index The active tick at the time of the new observation
+    /// @param liquidity The total in-range liquidity at the time of the new observation
+    /// @param cardinality The number of populated elements in the oracle array
+    /// @param cardinality_next The new length of the oracle array, independent of population
+    /// @return The new index of the most recently written element in the oracle array
+    /// @return The new cardinality of the oracle array
+    public fun write(
         self: &mut vector<Observation>,
         index: u64,
         time: u64,
@@ -106,7 +129,12 @@ module flowx_clmm::oracle {
         (index_updated, cardinality_updated)
     }
 
-    public(friend) fun grow(
+    /// Prepares the oracle array to store up to `next` observations
+    /// @param self The stored oracle array
+    /// @param current The current next cardinality of the oracle array
+    /// @param next The proposed next cardinality which will be populated in the oracle array
+    /// @return The next cardinality which will be populated in the oracle array
+    public fun grow(
         self: &mut vector<Observation>,
         current: u64,
         next: u64
@@ -147,6 +175,16 @@ module flowx_clmm::oracle {
         }
     }
 
+    // Fetches the observations before_or_at and at_or_after a target, i.e. where [before_or_at, at_or_after] is satisfied.
+    /// The result may be the same observation, or adjacent observations.
+    /// @dev The answer must be contained in the array, used when the target is located within the stored observation
+    /// boundaries: older than the most recent observation and younger, or the same age as, the oldest observation
+    /// @param self The stored oracle array
+    /// @param target The timestamp at which the reserved observation should be for
+    /// @param index The index of the observation that was most recently written to the observations array
+    /// @param cardinality The number of populated elements in the oracle array
+    /// @return The observation recorded before, or at, the target
+    /// @return The observation recorded at, or after, the target
     #[allow(unused_assignment)]
     public fun binary_search(
         self: &vector<Observation>,
@@ -186,6 +224,17 @@ module flowx_clmm::oracle {
         (before_or_at, at_or_after)
     }
 
+    /// Fetches the observations before_or_at and at_or_after a given target, i.e. where [before_or_at, at_or_after] is satisfied
+    /// Assumes there is at least 1 initialized observation.
+    /// Used by observe_single() to compute the counterfactual accumulator values as of a given timestamp
+    /// @param self The stored oracle array
+    /// @param target The timestamp at which the reserved observation should be for
+    /// @param tick The active tick at the time of the returned or simulated observation
+    /// @param index The index of the observation that was most recently written to the observations array
+    /// @param liquidity The total pool liquidity at the time of the call
+    /// @param cardinality The number of populated elements in the oracle array
+    /// @return The observation which occurred at, or before, the given timestamp
+    /// @return The observation which occurred at, or after, the given timestamp
     public fun get_surrounding_observations(
         self: &vector<Observation>,
         target: u64,
@@ -217,6 +266,19 @@ module flowx_clmm::oracle {
         binary_search(self, target, index, cardinality)
     }
 
+    /// @dev Reverts if an observation at or before the desired observation timestamp does not exist.
+    /// 0 may be passed as `seconds_ago' to return the current cumulative values.
+    /// If called with a timestamp falling between two observations, returns the counterfactual accumulator values
+    /// at exactly the timestamp between the two observations.
+    /// @param self The stored oracle array
+    /// @param time The current block timestamp
+    /// @param seconds_ago The amount of time to look back, in seconds, at which point to return an observation
+    /// @param tick_index The current tick
+    /// @param index The index of the observation that was most recently written to the observations array
+    /// @param liquidity The current in-range pool liquidity
+    /// @param cardinality The number of populated elements in the oracle array
+    /// @return The tick * time elapsed since the pool was first initialized, as of `seconds_ago`
+    /// @return The time elapsed / max(1, liquidity) since the pool was first initialized, as of `seconds_ago`
     public fun observe_single(
         self: &vector<Observation>,
         time: u64,
@@ -269,7 +331,18 @@ module flowx_clmm::oracle {
             )
         }
     }
-
+    
+    /// Returns the accumulator values as of each time seconds ago from the given time in the array of `seconds_agos`
+    /// Reverts if `seconds_agos` > oldest observation
+    /// @param self The stored oracle array
+    /// @param time The current block.timestamp
+    /// @param seconds_agos Each amount of time to look back, in seconds, at which point to return an observation
+    /// @param tick_index The current tick
+    /// @param index The index of the observation that was most recently written to the observations array
+    /// @param liquidity The current in-range pool liquidity
+    /// @param cardinality The number of populated elements in the oracle array
+    /// @return The tick * time elapsed since the pool was first initialized, as of each `seconds_ago`
+    /// @return The cumulative seconds / max(1, liquidity) since the pool was first initialized, as of each `seconds_ago`
     public fun observe(
         self: &vector<Observation>,
         time: u64,

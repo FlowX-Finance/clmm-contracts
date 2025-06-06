@@ -16,6 +16,7 @@ module flowx_clmm::tick {
     const E_TICKS_MISORDERED: u64 = 1;
     const E_TICK_LOWER_OUT_OF_BOUNDS: u64 = 2;
     const E_TICK_UPPER_OUT_OF_BOUNDS: u64 = 3;
+    const E_TICK_MISALIGNED: u64 = 4;
 
     struct TickInfo has copy, drop, store {
         liquidity_gross: u128,
@@ -28,7 +29,10 @@ module flowx_clmm::tick {
         seconds_out_side: u64
     }
 
-    public fun check_ticks(tick_lower_index: I32, tick_upper_index: I32)  {
+    public fun check_ticks(tick_lower_index: I32, tick_upper_index: I32, tick_spacing: u32) {
+        if (i32::abs_u32(tick_lower_index) % tick_spacing != 0 || i32::abs_u32(tick_upper_index) % tick_spacing != 0) {
+            abort E_TICK_MISALIGNED
+        };
         if (i32::gte(tick_lower_index, tick_upper_index)) {
             abort E_TICKS_MISORDERED
         };

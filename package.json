@@ -1,0 +1,13 @@
+{
+  "name": "flowx-clmm",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@bitbucket.org:elpis-global/flowx-clmm.git",
+  "author": "truong.nguyen@elpis.game",
+  "license": "MIT",
+  "dependencies": {
+    "@mysten/sui.js": "^0.54.0",
+    "dotenv": "^16.4.5",
+    "gql.tada": "^1.7.0"
+  }
+}

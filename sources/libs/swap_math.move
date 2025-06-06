@@ -3,6 +3,17 @@ module flowx_clmm::swap_math {
     use flowx_clmm::full_math_u64;
     use flowx_clmm::sqrt_price_math;
     
+    /// Computes the result of swapping some amount in, or amount out, given the parameters of the swap
+    /// @param sqrt_ratio_current The current sqrt price of the pool
+    /// @param sqrt_ratio_target The price that cannot be exceeded, from which the direction of the swap is inferred
+    /// @param liquidity The usable liquidity
+    /// @param amount_remaining How much input or output amount is remaining to be swapped in/out
+    /// @param fee_rate The fee taken from the input amount, expressed in hundredths of a bip
+    /// @param exact_in Whether the input is exactly swapped
+    /// @return sqrt_ratio_next_x64 The price after swapping the amount in/out, not to exceed the price target
+    /// @return The amount to be swapped in, of either token0 or token1, based on the direction of the swap
+    /// @return The amount to be received, of either token0 or token1, based on the direction of the swap
+    /// @return The amount of input that will be taken as a fee
     #[allow(unused_assignment)]
     public fun compute_swap_step(
         sqrt_ratio_current: u128,

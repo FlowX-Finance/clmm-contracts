@@ -47,9 +47,9 @@ module flowx_clmm::position {
     fun init(otw: POSITION, ctx: &mut TxContext) {
         let publisher = package::claim(otw, ctx);
         let display = display::new<Position>(&publisher, ctx);
-        display::add(&mut display, utf8(b"name"), utf8(b"Flowx Position's NFT"));
-        display::add(&mut display, utf8(b"description"), utf8(b"Flowx Position's NFT"));
-        display::add(&mut display, utf8(b"image_url"), utf8(b""));
+        display::add(&mut display, utf8(b"name"), utf8(b"FlowX CLMM Liquidity Positions"));
+        display::add(&mut display, utf8(b"description"), utf8(b"This NFT represents a liquidity position in FlowX CLMM. The owner of this NFT can modify or redeem the position."));
+        display::add(&mut display, utf8(b"image_url"), utf8(b"https://ipfs.io/ipfs/QmV3S91uDAPJAcqMNed3R6JyAXKnbidgNdHGhnwU5LyUDZ"));
         display::update_version(&mut display);
 
         transfer::public_transfer(display, tx_context::sender(ctx));
@@ -74,6 +74,8 @@ module flowx_clmm::position {
 
     public fun fee_growth_inside_y_last(self: &Position): u128 { self.fee_growth_inside_y_last }
 
+    public fun reward_length(self: &Position): u64 { vector::length(&self.reward_infos) }
+
     public fun reward_growth_inside_last(self: &Position, i: u64): u128 {
         let len = vector::length(&self.reward_infos);
         if (i >= len) {
@@ -90,6 +92,20 @@ module flowx_clmm::position {
         } else {
             vector::borrow(&self.reward_infos, i).coins_owed_reward
         }
+    }
+
+    public fun is_empty(self: &Position): bool {
+        let reward_empty = true;
+        let (i, reward_len) = (0, vector::length(&self.reward_infos));
+        while(i < reward_len) {
+            if (vector::borrow(&self.reward_infos, i).coins_owed_reward != 0) {
+                reward_empty = false;
+                break
+            };
+            i = i + 1;
+        };
+
+        (self.liquidity == 0 && self.coins_owed_x == 0 && self.coins_owed_y == 0 && reward_empty)
     }
 
     fun try_borrow_mut_reward_info(self: &mut Position, i: u64): &mut PositionRewardInfo {
@@ -198,7 +214,7 @@ module flowx_clmm::position {
 
         if (
             !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64)) ||
-            !full_math_u64::add_check(self.coins_owed_x, (coins_owed_x as u64))
+            !full_math_u64::add_check(self.coins_owed_y, (coins_owed_y as u64))
         ) {
             abort E_COINS_OWED_OVERFLOW
         };
