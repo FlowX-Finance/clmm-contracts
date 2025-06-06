@@ -10,7 +10,7 @@ module flowx_clmm::versioned {
     friend flowx_clmm::pool_manager;
     friend flowx_clmm::position_manager;
 
-    const VERSION: u64 = 3;
+    const VERSION: u64 = 4;
 
     const E_WRONG_VERSION: u64 = 999;
     const E_NOT_UPGRADED: u64 = 1000;
