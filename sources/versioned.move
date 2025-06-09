@@ -10,7 +10,7 @@ module flowx_clmm::versioned {
     friend flowx_clmm::pool_manager;
     friend flowx_clmm::position_manager;
 
-    const VERSION: u64 = 4;
+    const VERSION: u64 = 5;
 
     const E_WRONG_VERSION: u64 = 999;
     const E_NOT_UPGRADED: u64 = 1000;
@@ -84,7 +84,7 @@ module flowx_clmm::versioned {
             assert!(*is_paused_val == true, E_NOT_PAUSED);
             *is_paused_val = false;
         } else {
-            abort E_NOT_PAUSED;
+            abort E_NOT_PAUSED
         };
 
         event::emit(Unpaused {

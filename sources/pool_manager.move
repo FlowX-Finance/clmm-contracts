@@ -3,11 +3,13 @@ module flowx_clmm::pool_manager {
     use sui::object::{Self, UID, ID};
     use sui::table::{Self, Table};
     use sui::tx_context::{Self, TxContext};
-    use sui::coin::{Self, Coin};
+    use sui::coin::{Self, Coin, CoinMetadata};
+    use sui::dynamic_field::{Self as df};
     use sui::dynamic_object_field::{Self as dof};
     use sui::event;
     use sui::transfer;
     use sui::clock::Clock;
+    use sui::vec_set::{Self, VecSet};
 
     use flowx_clmm::admin_cap::AdminCap;
     use flowx_clmm::pool::{Self, Pool};
@@ -20,12 +22,15 @@ module flowx_clmm::pool_manager {
     const E_FEE_RATE_ALREADY_ENABLED: u64 = 4;
     const E_POOL_NOT_CREATED: u64 = 5;
     const E_FEE_RATE_NOT_ENABLED: u64 = 6;
+    const E_NOT_AUTHORIZED_POOL_MANAGER: u64 = 7;
 
     struct PoolDfKey has copy, drop, store {
         coin_type_x: TypeName,
         coin_type_y: TypeName,
         fee_rate: u64
     }
+
+    struct PoolManagerDfKey has copy, drop, store {}
 
     struct PoolRegistry has key, store {
         id: UID,
@@ -46,6 +51,16 @@ module flowx_clmm::pool_manager {
         sender: address,
         fee_rate: u64,
         tick_spacing: u32
+    }
+
+    struct PoolManagerGranted has copy, drop, store {
+        sender: address,
+        pool_manager: address
+    }
+
+    struct PoolManagerRevoked has copy, drop, store {
+        sender: address,
+        pool_manager: address
     }
 
     fun init(ctx: &mut TxContext) {
@@ -86,27 +101,60 @@ module flowx_clmm::pool_manager {
         dof::borrow_mut<PoolDfKey, Pool<X, Y>>(&mut self.id, pool_key<X, Y>(fee_rate))
     }
 
-    fun create_pool_<X, Y>(
+    public fun check_pool_manager(self: &PoolRegistry, ctx: &TxContext) {
+        if (
+            df::exists_with_type<PoolManagerDfKey, VecSet<address>>(&self.id, PoolManagerDfKey {}) &&
+            !vec_set::contains(
+                df::borrow<PoolManagerDfKey, VecSet<address>>(&self.id, PoolManagerDfKey {}),
+                &tx_context::sender(ctx)
+            )
+        ) {
+            abort E_NOT_AUTHORIZED_POOL_MANAGER
+        }
+    }
+
+    public fun grant_pool_manager(
+        _: &AdminCap,
         self: &mut PoolRegistry,
-        fee_rate: u64,
-        ctx: &mut TxContext
+        pool_manager: address,
+        versioned: &Versioned,
+        ctx: &TxContext
     ) {
-        let tick_spacing = *table::borrow(&self.fee_amount_tick_spacing, fee_rate);
-        let key = pool_key<X, Y>(fee_rate);
-        if (dof::exists_(&self.id, key)) {
-            abort E_POOL_ALREADY_CREATED
+        versioned::check_version(versioned);
+
+        if (!df::exists_with_type<PoolManagerDfKey, VecSet<address>>(&self.id, PoolManagerDfKey {})) {
+            df::add(&mut self.id, PoolManagerDfKey {}, vec_set::empty<address>());
         };
-        let pool = pool::create<X, Y>(fee_rate, tick_spacing, ctx);
-        event::emit(PoolCreated {
+        
+        let pool_managers = df::borrow_mut<PoolManagerDfKey, VecSet<address>>(&mut self.id, PoolManagerDfKey {});
+        vec_set::insert(pool_managers, pool_manager);
+
+        event::emit(PoolManagerGranted {
             sender: tx_context::sender(ctx),
-            pool_id: object::id(&pool),
-            coin_type_x: pool::coin_type_x(&pool),
-            coin_type_y: pool::coin_type_y(&pool),
-            fee_rate,
-            tick_spacing
+            pool_manager
         });
-        dof::add(&mut self.id, key, pool);
-        self.num_pools = self.num_pools + 1;
+    }
+
+    public fun revoke_pool_manager(
+        _: &AdminCap,
+        self: &mut PoolRegistry,
+        pool_manager: address,
+        versioned: &Versioned,
+        ctx: &TxContext
+    ) {
+        versioned::check_version(versioned);
+
+        if (!df::exists_with_type<PoolManagerDfKey, VecSet<address>>(&self.id, PoolManagerDfKey {})) {
+            df::add(&mut self.id, PoolManagerDfKey {}, vec_set::empty<address>());
+        };
+        
+        let pool_managers = df::borrow_mut<PoolManagerDfKey, VecSet<address>>(&mut self.id, PoolManagerDfKey {});
+        vec_set::remove(pool_managers, &pool_manager);
+
+        event::emit(PoolManagerRevoked {
+            sender: tx_context::sender(ctx),
+            pool_manager
+        });
     }
 
     public fun create_pool<X, Y>(
@@ -116,14 +164,8 @@ module flowx_clmm::pool_manager {
         ctx: &mut TxContext
     ) {
         versioned::check_version(versioned);
-        if (!table::contains(&self.fee_amount_tick_spacing, fee_rate)) {
-            abort E_FEE_RATE_NOT_ENABLED
-        };
-        if (utils::is_ordered<X, Y>()) {
-            create_pool_<X, Y>(self, fee_rate, ctx);
-        } else {
-            create_pool_<Y, X>(self, fee_rate, ctx);
-        };
+        check_pool_manager(self, ctx);
+        create_pool_permission_less<X, Y>(self, fee_rate, ctx);
     }
 
     public fun create_and_initialize_pool<X, Y>(
@@ -135,6 +177,36 @@ module flowx_clmm::pool_manager {
         ctx: &mut TxContext
     ) {
         create_pool<X, Y>(self, fee_rate, versioned, ctx);
+        if (utils::is_ordered<X, Y>()) {
+            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, versioned, clock, ctx);
+        } else {
+            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, versioned, clock, ctx);
+        };
+    }
+
+    public fun create_pool_v2<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        _metadata_x: &CoinMetadata<X>,
+        _metadata_y: &CoinMetadata<Y>,
+        versioned: &Versioned,
+        ctx: &mut TxContext
+    ) {
+        versioned::check_version(versioned);
+        create_pool_permission_less<X, Y>(self, fee_rate, ctx);
+    }
+
+    public fun create_and_initialize_pool_v2<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        sqrt_price: u128,
+        metadata_x: &CoinMetadata<X>,
+        metadata_y: &CoinMetadata<Y>,
+        versioned: &Versioned,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        create_pool_v2<X, Y>(self, fee_rate, metadata_x, metadata_y, versioned, ctx);
         if (utils::is_ordered<X, Y>()) {
             pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, versioned, clock, ctx);
         } else {
@@ -238,6 +310,44 @@ module flowx_clmm::pool_manager {
         );
     }
 
+    fun create_pool_permission_less<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        ctx: &mut TxContext
+    ) {
+        if (!table::contains(&self.fee_amount_tick_spacing, fee_rate)) {
+            abort E_FEE_RATE_NOT_ENABLED
+        };
+        if (utils::is_ordered<X, Y>()) {
+            create_pool_<X, Y>(self, fee_rate, ctx);
+        } else {
+            create_pool_<Y, X>(self, fee_rate, ctx);
+        };
+    }
+
+    fun create_pool_<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        ctx: &mut TxContext
+    ) {
+        let tick_spacing = *table::borrow(&self.fee_amount_tick_spacing, fee_rate);
+        let key = pool_key<X, Y>(fee_rate);
+        if (dof::exists_(&self.id, key)) {
+            abort E_POOL_ALREADY_CREATED
+        };
+        let pool = pool::create<X, Y>(fee_rate, tick_spacing, ctx);
+        event::emit(PoolCreated {
+            sender: tx_context::sender(ctx),
+            pool_id: object::id(&pool),
+            coin_type_x: pool::coin_type_x(&pool),
+            coin_type_y: pool::coin_type_y(&pool),
+            fee_rate,
+            tick_spacing
+        });
+        dof::add(&mut self.id, key, pool);
+        self.num_pools = self.num_pools + 1;
+    }
+
     fun enable_fee_rate_internal(
         self: &mut PoolRegistry,
         fee_rate: u64,
@@ -282,13 +392,17 @@ module flowx_clmm::pool_manager {
 module flowx_clmm::test_pool_manager {
     use sui::tx_context;
     use sui::sui::SUI;
+    use sui::test_scenario;
 
     use flowx_clmm::i32;
+    use flowx_clmm::admin_cap;
     use flowx_clmm::versioned;
     use flowx_clmm::pool_manager;
     use flowx_clmm::pool;
 
     struct USDC has drop {}
+
+    struct USDT has drop {}
 
     #[test]
     fun test_create_pool() {
@@ -315,6 +429,39 @@ module flowx_clmm::test_pool_manager {
 
         versioned::destroy_for_testing(versioned);
         pool_manager::destroy_for_testing(pool_registry);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = flowx_clmm::pool_manager::E_NOT_AUTHORIZED_POOL_MANAGER)]
+    public fun test_create_pool_fail_if_not_pool_manager() {
+        let alice = @0xa;
+        let bob = @0xb;
+        let ctx = tx_context::dummy();
+        let admin_cap = admin_cap::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+        pool_manager::grant_pool_manager(&admin_cap, &mut pool_registry, alice, &versioned, &ctx);
+
+        let scenario = test_scenario::begin(alice);
+
+        test_scenario::next_tx(&mut scenario, alice);
+        {
+            pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, test_scenario::ctx(&mut scenario));
+        };
+
+        test_scenario::next_tx(&mut scenario, bob);
+        {
+            pool_manager::create_pool<SUI, USDT>(&mut pool_registry, 100, &mut versioned, test_scenario::ctx(&mut scenario));
+        };
+
+        test_scenario::end(scenario);
+
+        admin_cap::destroy_for_testing(admin_cap);
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+
+        abort 999
     }
 
     #[test]
