@@ -7,4 +7,4 @@ published-at = "0xcd83322a271ef764063a44fc079a7e349fb7b0744465d76e2f39c8bcf5708b
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.34.2" }
 
 [addresses]
-flowx_clmm = "0x25929e7f29e0a30eb4e692952ba1b5b65a3a4d65ab5f2a32e1ba3edcb587f26d"
+flowx_clmm = "0xe882cd54551e73e64ff5b257146a0c5264546974cf00d78ecc871017cb22df67"
