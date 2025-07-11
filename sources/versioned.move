@@ -139,11 +139,7 @@ module flowx_clmm::versioned {
 
 #[test_only]
 module flowx_clmm::versioned_test {
-    use sui::object::{Self, UID};
-    use sui::tx_context::{Self, TxContext};
-    use sui::transfer;
-    use sui::event;
-    use sui::dynamic_field::{Self as df};
+    use sui::tx_context;
 
     use flowx_clmm::versioned;
 

@@ -367,9 +367,9 @@ module flowx_clmm::test_position_manager {
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
 
         let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
-        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &versioned, &mut ctx
         );
         position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
@@ -400,7 +400,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -431,9 +431,9 @@ module flowx_clmm::test_position_manager {
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
 
         let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
-        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &versioned, &mut ctx
         );
 
         let payment_x = coin::mint_for_testing<SCB>(1000, &mut ctx);
@@ -446,7 +446,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -471,7 +471,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -504,9 +504,9 @@ module flowx_clmm::test_position_manager {
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
 
         let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
-        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &versioned, &mut ctx
         );
         position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
@@ -516,7 +516,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -528,7 +528,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &ctx
         );
@@ -549,7 +549,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &ctx
         );
@@ -581,9 +581,9 @@ module flowx_clmm::test_position_manager {
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
 
         let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
-        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &versioned, &mut ctx
         );
         position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
@@ -593,7 +593,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -605,7 +605,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &ctx
         );
@@ -630,7 +630,7 @@ module flowx_clmm::test_position_manager {
         let (min_tick, max_tick) = (test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing));
         pool_manager::create_and_initialize_pool<SCB, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
         let position = position_manager::open_for_testing<SCB, USDC>(
-            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &mut versioned, &mut ctx
+            &mut position_registry, &pool_registry, fee_rate, min_tick, max_tick, &versioned, &mut ctx
         );
         position_manager::increase_liquidity<SCB, USDC>(
             &mut pool_registry,
@@ -640,7 +640,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );
@@ -652,7 +652,7 @@ module flowx_clmm::test_position_manager {
             0,
             0,
             1000,
-            &mut versioned,
+            &versioned,
             &clock,
             &ctx
         );
@@ -670,7 +670,7 @@ module flowx_clmm::test_position_manager {
             &mut position,
             flowx_clmm::constants::get_max_u64(),
             flowx_clmm::constants::get_max_u64(),
-            &mut versioned,
+            &versioned,
             &clock,
             &mut ctx
         );

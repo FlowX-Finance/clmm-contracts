@@ -412,7 +412,7 @@ module flowx_clmm::test_pool_manager {
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
 
-        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &versioned, &mut ctx);
         assert!(
             pool::coin_type_x(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<USDC>() &&
             pool::coin_type_y(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<SUI>() &&
@@ -447,12 +447,12 @@ module flowx_clmm::test_pool_manager {
 
         test_scenario::next_tx(&mut scenario, alice);
         {
-            pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, test_scenario::ctx(&mut scenario));
+            pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &versioned, test_scenario::ctx(&mut scenario));
         };
 
         test_scenario::next_tx(&mut scenario, bob);
         {
-            pool_manager::create_pool<SUI, USDT>(&mut pool_registry, 100, &mut versioned, test_scenario::ctx(&mut scenario));
+            pool_manager::create_pool<SUI, USDT>(&mut pool_registry, 100, &versioned, test_scenario::ctx(&mut scenario));
         };
 
         test_scenario::end(scenario);
@@ -475,7 +475,7 @@ module flowx_clmm::test_pool_manager {
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
 
         pool_manager::create_and_initialize_pool<SUI, USDC>(
-            &mut pool_registry, 100, 1844674407370955161, &mut versioned, &clock, &mut ctx
+            &mut pool_registry, 100, 1844674407370955161, &versioned, &clock, &mut ctx
         );
         assert!(
             pool::coin_type_x(pool_manager::borrow_pool<USDC, SUI>(&pool_registry, 100)) == std::type_name::get<USDC>() &&
@@ -504,7 +504,7 @@ module flowx_clmm::test_pool_manager {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
 
-        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+        pool_manager::create_pool<SUI, USDC>(&mut pool_registry, 100, &versioned, &mut ctx);
 
         versioned::destroy_for_testing(versioned);
         pool_manager::destroy_for_testing(pool_registry);
@@ -519,7 +519,7 @@ module flowx_clmm::test_pool_manager {
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
 
-        pool_manager::create_pool<SUI, SUI>(&mut pool_registry, 100, &mut versioned, &mut ctx);
+        pool_manager::create_pool<SUI, SUI>(&mut pool_registry, 100, &versioned, &mut ctx);
 
         versioned::destroy_for_testing(versioned);
         pool_manager::destroy_for_testing(pool_registry);

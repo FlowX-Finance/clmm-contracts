@@ -238,7 +238,7 @@ module flowx_clmm::test_swap_router {
         );
         pool::modify_liquidity<X, Y>(
             pool, &mut position, i128::from(liquidity), balance::create_for_testing(amount_x),
-            balance::create_for_testing(amount_y), &mut versioned, &clock, &ctx
+            balance::create_for_testing(amount_y), &versioned, &clock, &ctx
         );
 
         position::destroy_for_testing(position);
@@ -254,7 +254,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         let (reserve_x_before, reserve_y_before) = pool::reserves(
@@ -262,7 +262,7 @@ module flowx_clmm::test_swap_router {
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_exact_x_to_y<USDC, SUI>(
-            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &ctx
+            pool, coin::mint_for_testing(3, &mut ctx), 0, &versioned, &clock, &ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -288,7 +288,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //x -> y
@@ -296,7 +296,7 @@ module flowx_clmm::test_swap_router {
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
         );
         let y_out = swap_router::swap_exact_input<USDC, SUI>(
-            &mut pool_registry, fee_rate, coin::mint_for_testing(3, &mut ctx), 1, 0, 1000, &mut versioned, &clock, &mut ctx
+            &mut pool_registry, fee_rate, coin::mint_for_testing(3, &mut ctx), 1, 0, 1000, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -322,7 +322,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         let (reserve_x_before, reserve_y_before) = pool::reserves(
@@ -330,7 +330,7 @@ module flowx_clmm::test_swap_router {
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_exact_y_to_x<USDC, SUI>(
-            pool, coin::mint_for_testing(3, &mut ctx), 0, &mut versioned, &clock, &ctx
+            pool, coin::mint_for_testing(3, &mut ctx), 0, &versioned, &clock, &ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -356,7 +356,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //y -> x
@@ -364,7 +364,7 @@ module flowx_clmm::test_swap_router {
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
         );
         let y_out = swap_router::swap_exact_input<SUI, USDC>(
-            &mut pool_registry, fee_rate, coin::mint_for_testing(3, &mut ctx), 1, 0, 1000, &mut versioned, &clock, &mut ctx
+            &mut pool_registry, fee_rate, coin::mint_for_testing(3, &mut ctx), 1, 0, 1000, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -390,7 +390,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //y -> x
@@ -399,7 +399,7 @@ module flowx_clmm::test_swap_router {
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_x_to_exact_y<USDC, SUI>(
-            pool, coin::mint_for_testing(101, &mut ctx), 100, 0, &mut versioned, &clock, &mut ctx
+            pool, coin::mint_for_testing(101, &mut ctx), 100, 0, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -427,7 +427,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //y -> x
@@ -435,7 +435,7 @@ module flowx_clmm::test_swap_router {
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
         );
         let y_out = swap_router::swap_exact_output<USDC, SUI>(
-            &mut pool_registry, fee_rate, coin::mint_for_testing(101, &mut ctx), 100, 0, 1000, &mut versioned, &clock, &mut ctx
+            &mut pool_registry, fee_rate, coin::mint_for_testing(101, &mut ctx), 100, 0, 1000, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -462,7 +462,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //y -> x
@@ -471,7 +471,7 @@ module flowx_clmm::test_swap_router {
         );
         let pool = pool_manager::borrow_mut_pool<USDC, SUI>(&mut pool_registry, fee_rate);
         let y_out = swap_router::swap_y_to_exact_x<USDC, SUI>(
-            pool, coin::mint_for_testing(101, &mut ctx), 100, 0, &mut versioned, &clock, &mut ctx
+            pool, coin::mint_for_testing(101, &mut ctx), 100, 0, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
@@ -498,7 +498,7 @@ module flowx_clmm::test_swap_router {
         let versioned = versioned::create_for_testing(&mut ctx);
         let pool_registry = pool_manager::create_for_testing(&mut ctx);
         pool_manager::enable_fee_rate_for_testing(&mut pool_registry, fee_rate, tick_spacing);
-        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &mut versioned, &clock, &mut ctx);
+        pool_manager::create_and_initialize_pool<SUI, USDC>(&mut pool_registry, fee_rate, test_utils::encode_sqrt_price(1, 1), &versioned, &clock, &mut ctx);
         add_liquidity<USDC, SUI>(&mut pool_registry, fee_rate, test_utils::get_min_tick(tick_spacing), test_utils::get_max_tick(tick_spacing), 1000000);
 
         //y -> x
@@ -506,7 +506,7 @@ module flowx_clmm::test_swap_router {
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
         );
         let y_out = swap_router::swap_exact_output<SUI, USDC>(
-            &mut pool_registry, fee_rate, coin::mint_for_testing(101, &mut ctx), 100, 0, 1000, &mut versioned, &clock, &mut ctx
+            &mut pool_registry, fee_rate, coin::mint_for_testing(101, &mut ctx), 100, 0, 1000, &versioned, &clock, &mut ctx
         );
         let (reserve_x_after, reserve_y_after) = pool::reserves(
             pool_manager::borrow_pool<USDC, SUI>(&pool_registry, fee_rate)
