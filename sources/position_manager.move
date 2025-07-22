@@ -73,6 +73,15 @@ module flowx_clmm::position_manager {
         });
     }
 
+    /// Open a new liquidity position in a pool
+    /// @param self The position registry
+    /// @param pool_registry The pool registry containing the target pool
+    /// @param fee_rate The fee rate of the pool
+    /// @param tick_lower_index The lower tick boundary of the position
+    /// @param tick_upper_index The upper tick boundary of the position
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
+    /// @return A new Position NFT representing the liquidity position
     public fun open_position<X, Y>(
         self: &mut PositionRegistry,
         pool_registry: &PoolRegistry,
@@ -110,6 +119,12 @@ module flowx_clmm::position_manager {
         position
     }
 
+    /// Close an empty liquidity position and destroy the Position NFT
+    /// The position must have zero liquidity and zero accrued fees before closing
+    /// @param self The position registry
+    /// @param position The position NFT to close (must be empty)
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
     public fun close_position(
         self: &mut PositionRegistry,
         position: Position,
@@ -130,6 +145,17 @@ module flowx_clmm::position_manager {
         self.num_positions = self.num_positions - 1;
     }
 
+    /// Increase liquidity in an existing position by adding coins
+    /// @param self The pool registry
+    /// @param position The position to add liquidity to
+    /// @param payment_x The coin X to pay as liquidity
+    /// @param payment_y The coin Y to pay as liquidity
+    /// @param amount_x_min Minimum amount of coin X to be used (slippage protection)
+    /// @param amount_y_min Minimum amount of coin Y to be used (slippage protection)
+    /// @param deadline Transaction deadline timestamp
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
     fun increase_liquidity_<X, Y>(
         self: &mut PoolRegistry,
         position: &mut Position,
@@ -219,6 +245,16 @@ module flowx_clmm::position_manager {
         );
     }    
 
+    /// Decrease liquidity in an existing position and receive coins
+    /// @param self The pool registry
+    /// @param position The position to remove liquidity from
+    /// @param liquidity The amount of liquidity to remove
+    /// @param amount_x_min Minimum amount of coin X to receive (slippage protection)
+    /// @param amount_y_min Minimum amount of coin Y to receive (slippage protection)
+    /// @param deadline Transaction deadline timestamp
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
     public fun decrease_liquidity<X, Y>(
         self: &mut PoolRegistry,
         position: &mut Position,
@@ -251,6 +287,16 @@ module flowx_clmm::position_manager {
         });
     }
 
+    /// Collect accrued fees from a position
+    /// @param self The pool registry
+    /// @param position The position to collect fees from
+    /// @param amount_x_requested The amount of coin X fees to collect
+    /// @param amount_y_requested The amount of coin Y fees to collect
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
+    /// @return Collected coin X fees
+    /// @return Collected coin Y fees
     public fun collect<X, Y>(
         self: &mut PoolRegistry,
         position: &mut Position,

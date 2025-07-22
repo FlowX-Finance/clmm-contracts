@@ -13,6 +13,14 @@ module flowx_clmm::swap_router {
     const E_INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1;
     const E_EXCESSIVE_INPUT_AMOUNT: u64 = 2;
 
+    /// Swap an exact amount of coin X for coin Y
+    /// @param pool The pool to swap in
+    /// @param coin_in The coin X to swap
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
+    /// @return The resulting coin Y balance
     public fun swap_exact_x_to_y<X, Y>(
         pool: &mut Pool<X, Y>,
         coin_in: Coin<X>,
@@ -31,6 +39,14 @@ module flowx_clmm::swap_router {
         y_out
     }
 
+    /// Swap an exact amount of coin Y for coin X
+    /// @param pool The pool to swap in
+    /// @param coin_in The coin Y to swap
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
+    /// @return The resulting coin X balance
     public fun swap_exact_y_to_x<X, Y>(
         pool: &mut Pool<X, Y>,
         coin_in: Coin<Y>,
@@ -49,6 +65,17 @@ module flowx_clmm::swap_router {
         x_out
     }
 
+    /// Swap an exact input amount with minimum output protection and deadline
+    /// @param pool_registry The pool registry containing the target pool
+    /// @param fee The fee rate of the pool to use
+    /// @param coin_in The input coin to swap
+    /// @param amount_out_min Minimum output amount (slippage protection)
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param deadline Transaction deadline timestamp
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
+    /// @return The output coin from the swap
     public fun swap_exact_input<X, Y>(
         pool_registry: &mut PoolRegistry,
         fee: u64,
@@ -88,6 +115,15 @@ module flowx_clmm::swap_router {
         coin::from_balance(coin_out, ctx)
     }
 
+    /// Swap an exact output amount of coin Y
+    /// @param pool The pool to swap in
+    /// @param coin_in The input coin to swap
+    /// @param amount_y_out The exact output amount of coin Y
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
+    /// @return The resulting coin Y balance
     public fun swap_x_to_exact_y<X, Y>(
         pool: &mut Pool<X, Y>,
         coin_in: Coin<X>,
@@ -115,6 +151,15 @@ module flowx_clmm::swap_router {
         y_out
     }
 
+    /// Swap an exact output amount of coin X
+    /// @param pool The pool to swap in
+    /// @param coin_in The input coin to swap
+    /// @param amount_x_out The exact output amount of coin X
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
+    /// @return The resulting coin X balance
     public fun swap_y_to_exact_x<X, Y>(
         pool: &mut Pool<X, Y>,
         coin_in: Coin<Y>,
@@ -142,6 +187,17 @@ module flowx_clmm::swap_router {
         x_out
     }
 
+    /// Swap an exact output amount of coin Y with minimum input protection and deadline
+    /// @param pool_registry The pool registry containing the target pool
+    /// @param fee The fee rate of the pool to use
+    /// @param coin_in The input coin to swap
+    /// @param amount_out The exact output amount of coin Y
+    /// @param sqrt_price_limit The sqrt price limit for the swap
+    /// @param deadline Transaction deadline timestamp
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing validation
+    /// @param ctx The transaction context
+    /// @return The output coin from the swap
     public fun swap_exact_output<X, Y>(
         pool_registry: &mut PoolRegistry,
         fee: u64,

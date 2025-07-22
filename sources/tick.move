@@ -152,6 +152,18 @@ module flowx_clmm::tick {
         (constants::get_max_u128() / (num_ticks as u128))
     }
 
+    /// Returns the fee and reward growths inside the specified tick range.
+    /// @dev This function calculates the fee and reward growths inside the tick range defined by `tick_lower_index` and `tick_upper_index`.
+    /// @param self The mapping containing all tick information for initialized ticks.
+    /// @param tick_lower_index The lower tick boundary of the position.
+    /// @param tick_upper_index The upper tick boundary of the position.
+    /// @param tick_current_index The current tick index.
+    /// @param fee_growth_global_x The all-time global fee growth, per unit of liquidity, in token X.
+    /// @param fee_growth_global_y The all-time global fee growth, per unit of liquidity, in token Y.
+    /// @param reward_growths_global The all-time global reward growths, per unit of liquidity, for each reward type.
+    /// @return The all-time fee growth in tokenX, per unit of liquidity, inside the position's tick boundaries.
+    /// @return The all-time fee growth in tokenY, per unit of liquidity, inside the position's tick boundaries.
+    /// @return The all-time reward growths, per unit of liquidity, inside the position's tick boundaries.
     public fun get_fee_and_reward_growths_inside(
         self: &Table<I32, TickInfo>,
         tick_lower_index: I32,
@@ -192,6 +204,23 @@ module flowx_clmm::tick {
         )
     }
 
+    /// Updates a tick and returns true if the tick was flipped from initialized to uninitialized, or vice versa
+    /// @dev This function updates the tick information for the tick being updated, including liquidity, fee growths, reward growths, seconds per liquidity, tick cumulative, and seconds.
+    /// @dev If the tick is being initialized, it sets the fee growths, reward growths, seconds per liquidity, tick cumulative, and seconds to the provided values.
+    /// If the tick is being uninitialized, it clears the fee growths, reward growths, seconds per liquidity, tick cumulative, and seconds.
+    /// @param self The mapping containing all tick information for initialized ticks.
+    /// @param tick_index The index of the tick to update.
+    /// @param tick_current_index The current tick index.
+    /// @param liquidity_delta  A new amount of liquidity to be added (subtracted) when tick is crossed from left to right (right to left).
+    /// @param fee_growth_global_x The all-time global fee growth, per unit of liquidity, in token X.
+    /// @param fee_growth_global_y The all-time global fee growth, per unit of liquidity, in token Y.
+    /// @param reward_growths_global The all-time global reward growths, per unit of liquidity, for each reward type.
+    /// @param seconds_per_liquidity_cumulative The all-time seconds per max(1, liquidity) of the pool.
+    /// @param tick_cumulative The tick * time elapsed since the pool was first initialized.
+    /// @param timestamp_s The current timestamp in seconds.
+    /// @param upper True for updating a position's upper tick, or false for updating a position's lower tick
+    /// @param max_liquidity The maximum liquidity that can be added to the tick.
+    /// @return Whether the tick was flipped from initialized to uninitialized, or vice versa.
     public(friend) fun update(
         self: &mut Table<I32, TickInfo>,
         tick_index: I32,
@@ -244,10 +273,25 @@ module flowx_clmm::tick {
         flipped
     }
 
+    /// Clears a tick from the table.
+    /// @param self The mapping containing all tick information for initialized ticks.
+    /// @param tick The index of the tick to clear.
     public(friend) fun clear(self: &mut Table<I32, TickInfo>, tick: I32) {
         table::remove(self, tick);
     }
 
+    /// Transitions to next tick as needed by price movement
+    /// @dev This function updates the tick information for the tick being crossed, including fee growths, reward growths, seconds per liquidity, tick cumulative, and seconds.
+    /// It returns the amount of liquidity added (subtracted) when the tick is crossed from left to right (right to left).
+    /// @param self The mapping containing all tick information for initialized ticks.
+    /// @param tick_index The index of the tick to cross.
+    /// @param fee_growth_global_x The all-time global fee growth, per unit of liquidity, in token X.
+    /// @param fee_growth_global_y The all-time global fee growth, per unit of liquidity, in token Y.
+    /// @param reward_growths_global The all-time global reward growths, per unit of liquidity, for each reward type.
+    /// @param seconds_per_liquidity_cumulative The all-time seconds per max(1, liquidity) of the pool.
+    /// @param tick_cumulative The tick * time elapsed since the pool was first initialized.
+    /// @param timestamp_s The current timestamp in seconds.
+    /// @return  The amount of liquidity added (subtracted) when tick is crossed from left to right (right to left).
     public(friend) fun cross(
         self: &mut Table<I32, TickInfo>,
         tick_index: I32,
@@ -268,6 +312,14 @@ module flowx_clmm::tick {
         tick_info.liquidity_net
     }
 
+    /// Computes the reward growths inside the tick range.
+    /// @dev The reward growths inside the tick range are computed as the difference between the global reward growths and the reward growths outside the tick range.
+    /// @dev If the reward growths outside the tick range are not available, they are assumed to be zero.
+    /// @dev The function assumes that the length of `reward_growths_global` and `reward_growths_outside` are the same.
+    /// @dev The function will panic if the lengths of `reward_growths_global` and `reward_growths_outside` are not the same.
+    /// @param reward_growths_global The all-time global reward growths, per unit of liquidity, for each reward type.
+    /// @param reward_growths_outside The reward growths outside the tick range.
+    /// @return The reward growths inside the tick range.
     fun compute_reward_growths(reward_growths_global: vector<u128>, reward_growths_outside: vector<u128>): vector<u128> {
         let (i, len) = (0, vector::length(&reward_growths_global));
         let result = vector::empty<u128>();
