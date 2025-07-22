@@ -32,6 +32,12 @@ module flowx_clmm::tick_math {
         TICK_BOUND
     }
 
+    /// Calculates sqrt(1.0001^tick) * 2^64
+    /// @dev Throws if |tick| > max tick
+    /// @param tick The tick for which to calculate the sqrt price.
+    /// @return A Fixed point Q64.64 number representing the sqrt of the ratio of the two assets (tokenY/tokenX)
+    /// at the given tick.
+    /// Reference: https://paco0x.org/uniswap-v3-2/#sqrt-p---tick-index
     public fun get_sqrt_price_at_tick(tick: i32::I32): u128 {
         assert!(i32::gte(tick, min_tick()) && i32::lte(tick, max_tick()), EINVALID_TICK);
         if (i32::is_neg(tick)) {
@@ -46,6 +52,13 @@ module flowx_clmm::tick_math {
         in_range && (i32::mod(index, i32::from(tick_spacing)) == i32::from(0))
     }
 
+    /// Calculates the greatest tick value such that getRatioAtTick(tick) <= ratio
+    /// @dev Throws in case sqrtPriceX64 < MIN_SQRT_RATIO, as MIN_SQRT_RATIO is the lowest value getRatioAtTick may
+    /// ever return or in case sqrtPriceX64 > MAX_SQRT_RATIO, as MAX_SQRT_RATIO is the highest value getRatioAtTick may
+    /// ever return.
+    /// @param sqrt_price  The sqrt ratio for which to compute the tick as a Q64.64.
+    /// @return The greatest tick for which the ratio is less than or equal to the input ratio.
+    /// Reference: https://paco0x.org/uniswap-v3-2/#sqrt-p---tick-index
     public fun get_tick_at_sqrt_price(sqrt_price: u128): i32::I32 {
         assert!(sqrt_price >= MIN_SQRT_PRICE_X64 && sqrt_price <= MAX_SQRT_PRICE_X64, EINVALID_SQRT_PRICE);
         let r = sqrt_price;

@@ -44,24 +44,34 @@ module flowx_clmm::versioned {
         });
     }
 
+    /// Check that the current package version matches the expected version
+    /// @param self The versioned object to check
     public fun check_version(self: &Versioned) {
         if (self.version != VERSION) {
             abort E_WRONG_VERSION
         }
     }
 
+    /// Check that the system is not currently paused
+    /// @param self The versioned object to check
     public fun check_pause(self: &Versioned) {
         if (is_paused(self)) {
             abort E_ALREADY_PAUSED
         }
     }
 
+    /// Upgrade the package version 
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The versioned object to upgrade
     public fun upgrade(_: &AdminCap, self: &mut Versioned) {
         assert!(self.version < VERSION, E_NOT_UPGRADED);
         ugrade_internal(self);
     }
-    
 
+    /// Pause the entire system
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The versioned object to pause
+    /// @param ctx The transaction context
     public entry fun pause(_: &AdminCap, self: &mut Versioned, ctx: &TxContext) {
         check_version(self);
         if (df::exists_with_type<GlobalPauseDfKey, bool>(&self.id, GlobalPauseDfKey {})) {
@@ -77,6 +87,10 @@ module flowx_clmm::versioned {
         });
     }
 
+    /// Unpause the entire system (admin-only operation)
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The versioned object to unpause
+    /// @param ctx The transaction context
     public entry fun unpause(_: &AdminCap, self: &mut Versioned, ctx: &TxContext) {
         check_version(self);
         if (df::exists_with_type<GlobalPauseDfKey, bool>(&self.id, GlobalPauseDfKey {})) {
@@ -92,6 +106,9 @@ module flowx_clmm::versioned {
         });
     }
 
+    /// Check if the system is currently paused
+    /// @param self The versioned object to check
+    /// @return true if the system is paused, false otherwise
     public fun is_paused(self: &Versioned): bool {
         let is_paused = if (df::exists_with_type<GlobalPauseDfKey, bool>(&self.id, GlobalPauseDfKey {})) {
             let is_paused_val = df::borrow<GlobalPauseDfKey, bool>(&self.id, GlobalPauseDfKey {});
