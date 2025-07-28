@@ -11,8 +11,8 @@ A concentrated liquidity market maker (CLMM) protocol built on the Sui blockchai
 - [🔧 Core Functions](#-core-functions)
 - [📋 API Reference](#-api-reference)
 - [💡 Developer Guide](#-developer-guide)
+- [🔮 Price Oracle System](#-price-oracle-system)
 - [🧮 Mathematical Libraries](#-mathematical-libraries)
-- [🛠️ Development](#-development)
 - [📦 Deployment](#-deployment)
 
 ## 📖 Overview
@@ -607,7 +607,6 @@ let sui_coin = coin::from_balance(sui_out, ctx);
 ```
 
 </details>
-```
 
 ## 📋 API Reference
 
@@ -1649,6 +1648,129 @@ public fun arbitrage_opportunity<X, Y>(
     // 6. Return any profit
     (balance::zero<X>(), balance::zero<Y>())
 }
+```
+
+## 🔮 Price Oracle System
+
+FlowX CLMM includes a sophisticated time-weighted average price (TWAP) oracle system that provides reliable price feeds and historical data tracking. The oracle automatically records price and liquidity data with each swap, creating a decentralized price feed that follows the Uniswap V3 oracle design.
+
+### 🎯 Oracle Features
+
+| Feature                    | Description                                       |
+| -------------------------- | ------------------------------------------------- |
+| **TWAP Calculation**       | Time-weighted average prices over any time period |
+| **Automated Recording**    | Automatic price updates with every transaction    |
+| **Historical Data**        | Up to 1000 observations stored per pool           |
+| **Manipulation Resistant** | Requires significant capital to manipulate prices |
+| **Gas Efficient**          | Optimized storage and calculation algorithms      |
+
+### 📊 Oracle Data Structure
+
+Each oracle observation contains:
+
+- **Timestamp (seconds)**: When the observation was recorded (in seconds, not milliseconds)
+- **Tick Cumulative (I64)**: Cumulative sum of tick values over time (signed integer)
+- **Seconds per Liquidity (u256)**: Time-weighted measure of liquidity depth
+- **Initialization Status**: Whether the observation slot is active
+
+### 🔧 Core Oracle Functions
+
+#### Get Historical Price Data
+
+```move
+/// Get TWAP data for specified time periods
+public fun observe<X, Y>(
+    self: &Pool<X, Y>,
+    seconds_agos: vector<u64>,
+    clock: &Clock
+): (vector<I64>, vector<u256>)
+```
+
+**Parameters:**
+
+- `self`: Pool to query oracle data from
+- `seconds_agos`: Array of time periods to look back (in seconds)
+- `clock`: Clock object for current timestamp
+
+**Returns:**
+
+- `vector<I64>`: Tick cumulatives for each time period (signed integers)
+- `vector<u256>`: Seconds per liquidity cumulatives for each time period
+
+#### Increase Oracle Capacity
+
+```move
+/// Increase the maximum number of observations this pool will store
+public fun increase_observation_cardinality_next<X, Y>(
+    self: &mut Pool<X, Y>,
+    observation_cardinality_next: u64,
+    versioned: &Versioned,
+    ctx: &TxContext
+)
+```
+
+**Parameters:**
+
+- `self`: Pool to increase capacity for
+- `observation_cardinality_next`: New maximum number of observations (max 1000)
+- `versioned`: Versioned object for package version validation
+- `ctx`: Transaction context
+
+### 💡 TWAP Calculation Examples
+
+#### Basic TWAP Price Calculation
+
+```move
+use flowx_clmm::i64;
+use flowx_clmm::i32;
+use flowx_clmm::tick_math;
+
+/// Calculate TWAP price over specified time period
+public fun calculate_twap_price<X, Y>(
+    pool: &Pool<X, Y>,
+    period_seconds: u64,
+    clock: &Clock
+): u128 {
+    // Get tick cumulatives for current time and period ago
+    let seconds_agos = vector[0, period_seconds];
+    let (tick_cumulatives, _) = pool.observe(seconds_agos, clock);
+
+    let current_cumulative = *vector::borrow(&tick_cumulatives, 0);
+    let past_cumulative = *vector::borrow(&tick_cumulatives, 1);
+
+    // Calculate time-weighted average tick (handle signed arithmetic)
+    let tick_delta = i64::sub(current_cumulative, past_cumulative);
+    let average_tick_i64 = i64::div(tick_delta, i64::from(period_seconds));
+
+    // Convert I64 to I32 for tick math
+    let average_tick = if (i64::is_neg(average_tick_i64)) {
+        i32::neg_from(i64::abs_u64(average_tick_i64))
+    } else {
+        i32::from_u64(i64::abs_u64(average_tick_i64))
+    };
+
+    // Convert tick to sqrt price
+    tick_math::get_sqrt_price_at_tick(average_tick)
+}
+
+/// Get current oracle state information
+public fun get_oracle_info<X, Y>(pool: &Pool<X, Y>): (u64, u64, u64) {
+    (
+        pool.observation_index(),           // Current observation index
+        pool.observation_cardinality(),     // Number of populated observations
+        pool.observation_cardinality_next() // Maximum observations capacity
+    )
+}
+```
+
+### Data Access Functions
+
+```move
+// Pool oracle state getters (read-only)
+pool.observation_index();           // Current observation index: u64
+pool.observation_cardinality();     // Active observations count: u64
+pool.observation_cardinality_next(); // Maximum capacity: u64
+pool.borrow_observations();         // Direct access to observations vector
 ```
 
 ### ⚠️ Error Handling
