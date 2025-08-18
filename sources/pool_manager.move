@@ -85,6 +85,9 @@ module flowx_clmm::pool_manager {
         }
     }
 
+    /// Check if a pool exists for the given coin types and fee rate
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to check
     public fun check_exists<X, Y>(self: &PoolRegistry, fee_rate: u64) {
         if (!dof::exists_(&self.id, pool_key<X, Y>(fee_rate))) {
             abort E_POOL_NOT_CREATED
@@ -157,6 +160,12 @@ module flowx_clmm::pool_manager {
         });
     }
 
+    /// Create a new liquidity pool for the given coin types and fee rate
+    /// Only callable by pool managers.
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
     public fun create_pool<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
@@ -168,6 +177,14 @@ module flowx_clmm::pool_manager {
         create_pool_permission_less<X, Y>(self, fee_rate, ctx);
     }
 
+    /// Create and immediately initialize a new liquidity pool with an initial price
+    /// Only callable by pool managers.
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param sqrt_price The initial square root price as a Q64.64 value
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
     public fun create_and_initialize_pool<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
@@ -184,6 +201,13 @@ module flowx_clmm::pool_manager {
         };
     }
 
+    /// Create a new liquidity pool for the given coin types and fee rate without checking permissions
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param _metadata_x The metadata for coin X (not used)
+    /// @param _metadata_y The metadata for coin Y (not used)
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
     public fun create_pool_v2<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
@@ -196,6 +220,15 @@ module flowx_clmm::pool_manager {
         create_pool_permission_less<X, Y>(self, fee_rate, ctx);
     }
 
+    /// Create and immediately initialize a new liquidity pool with an initial price
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param sqrt_price The initial square root price as a Q64.64 value
+    /// @param metadata_x The metadata for coin X
+    /// @param metadata_y The metadata for coin Y
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
     public fun create_and_initialize_pool_v2<X, Y>(
         self: &mut PoolRegistry,
         fee_rate: u64,
@@ -214,6 +247,13 @@ module flowx_clmm::pool_manager {
         };
     }
 
+    /// Enable a new fee rate and tick spacing combination for pool creation
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate to enable (must be less than 1,000,000)
+    /// @param tick_spacing The tick spacing for this fee rate (must be greater than 0 and less than 4,194,304)
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
     public fun enable_fee_rate(
         _: &AdminCap,
         self: &mut PoolRegistry,
@@ -237,6 +277,14 @@ module flowx_clmm::pool_manager {
         enable_fee_rate_internal(self, fee_rate, tick_spacing, ctx);
     }
 
+    /// Set the protocol fee rate for a specific pool
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to modify
+    /// @param protocol_fee_rate_x The protocol fee rate for coin X
+    /// @param protocol_fee_rate_y The protocol fee rate for coin Y
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
     public fun set_protocol_fee_rate<X, Y>(
         admin_cap: &AdminCap,
         self: &mut PoolRegistry,
@@ -251,6 +299,16 @@ module flowx_clmm::pool_manager {
         );
     }
 
+    /// Collect protocol fees from a specific pool
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to collect from
+    /// @param amount_x_requested The amount of coin X protocol fees to collect
+    /// @param amount_y_requested The amount of coin Y protocol fees to collect
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
+    /// @return Collected coin X
+    /// @return Collected coin Y
     public fun collect_protocol_fee<X, Y>(
         admin_cap: &AdminCap,
         self: &mut PoolRegistry,
@@ -266,6 +324,16 @@ module flowx_clmm::pool_manager {
         (coin::from_balance(collected_x, ctx), coin::from_balance(collected_y, ctx))
     }
 
+    /// Initialize a pool reward for a specific pool
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to initialize the reward for
+    /// @param started_at_seconds The start time of the reward in seconds since epoch
+    /// @param ended_at_seconds The end time of the reward in seconds since epoch
+    /// @param allocated The amount of reward coins allocated to the pool
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
     public fun initialize_pool_reward<X, Y, RewardCoinType>(
         admin_cap: &AdminCap,
         self: &mut PoolRegistry,
@@ -282,6 +350,14 @@ module flowx_clmm::pool_manager {
         );
     }
 
+    /// Increase the pool reward for a specific pool
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to increase the reward for
+    /// @param allocated The amount of reward coins to add to the pool
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
     public fun increase_pool_reward<X, Y, RewardCoinType>(
         admin_cap: &AdminCap,
         self: &mut PoolRegistry,
@@ -296,6 +372,14 @@ module flowx_clmm::pool_manager {
         );
     }
 
+    /// Extend the reward timestamp for a specific pool
+    /// @param admin_cap The admin capability required for this operation
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate of the pool to extend the reward for
+    /// @param timestamp The new end timestamp for the reward in seconds since epoch
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
     public fun extend_pool_reward_timestamp<X, Y, RewardCoinType>(
         admin_cap: &AdminCap,
         self: &mut PoolRegistry,

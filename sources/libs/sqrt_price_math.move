@@ -10,6 +10,16 @@ module flowx_clmm::sqrt_price_math {
     const E_NOT_ENOUGH_LIQUIDITY: u64 = 3;
     const E_INVALID_PRICE_OR_LIQUIDITY: u64 = 4;
 
+    /// Gets the next sqrt price given a delta of tokenX.
+    /// @dev Always rounds up, because in the exact output case (increasing price) we need to move the price at least
+    /// far enough to get the desired output amount, and in the exact input case (decreasing price) we need to move the
+    /// price less in order to not send too much output.
+    /// The formula for this is liquidity * sqrtPX64 / (liquidity +- amount * sqrtPX64)
+    /// @param sqrt_price The current sqrt price.
+    /// @param liquidity The current liquidity.
+    /// @param amount The amount of tokenX to add or remove.
+    /// @param add Whether to add or remove the amount of tokenX.
+    /// @return The price after adding or removing amount, depending on add.
     public fun get_next_sqrt_price_from_amount_x_rouding_up(
         sqrt_price: u128,
         liquidity: u128,
@@ -45,6 +55,16 @@ module flowx_clmm::sqrt_price_math {
         new_sqrt_price
     }
 
+    /// Gets the next sqrt price given a delta of tokenY
+    /// @dev Always rounds down, because in the exact output case (decreasing price) we need to move the price at least
+    /// far enough to get the desired output amount, and in the exact input case (increasing price) we need to move the
+    /// price less in order to not send too much output.
+    /// The formula we compute is within <1 wei of the lossless version: sqrtPX64 +- amount / liquidity
+    /// @param sqrt_price The current sqrt price.
+    /// @param liquidity The current liquidity.
+    /// @param amount The amount of tokenY to add or remove.
+    /// @param add Whether to add or remove the amount of tokenY.
+    /// @return The price after adding or removing amount, depending on add.
     public fun get_next_sqrt_price_from_amount_y_rouding_down(
         sqrt_price: u128,
         liquidity: u128,
@@ -68,6 +88,13 @@ module flowx_clmm::sqrt_price_math {
         new_sqrt_price
     }
 
+    /// Gets the next sqrt price given an input amount of tokenX or tokenY.
+    /// @dev Throws if price or liquidity are 0, or if the next price is out of bounds
+    /// @param sqrt_price The current sqrt price.
+    /// @param liquidity The current liquidity.
+    /// @param amount_in The amount of tokenX or tokenY to add.
+    /// @param x_for_y Whether the input amount is tokenX (true) or tokenY (false).
+    /// @return The price after adding the input amount to tokenX or tokenY.
     public fun get_next_sqrt_price_from_input(
         sqrt_price: u128,
         liquidity: u128,
@@ -83,6 +110,13 @@ module flowx_clmm::sqrt_price_math {
         }
     }
 
+    /// Gets the next sqrt price given an output amount of tokenX or tokenY.
+    /// @dev Throws if price or liquidity are 0, or if the next price is out of bounds
+    /// @param sqrt_price The current sqrt price.
+    /// @param liquidity The current liquidity.
+    /// @param amount_out The amount of tokenX or tokenY to remove.
+    /// @param x_for_y Whether the output amount is tokenX (true) or tokenY (false).
+    /// @return The price after removing the output amount from tokenX or tokenY.
     public fun get_next_sqrt_price_from_output(
         sqrt_price: u128,
         liquidity: u128,
@@ -98,6 +132,14 @@ module flowx_clmm::sqrt_price_math {
         }
     }
 
+    /// Gets the amountX delta between two prices
+    /// @dev Calculates liquidity / sqrt(lower) - liquidity / sqrt(upper),
+    /// i.e. liquidity * (sqrt(upper) - sqrt(lower)) / (sqrt(upper) * sqrt(lower)
+    /// @param sqrt_ratio_0 A sqrt price.
+    /// @param sqrt_ratio_1 Another sqrt price.
+    /// @param liquidity  The amount of usable liquidity.
+    /// @param round_up Whether to round up the result.
+    /// @return Amount of tokenX required to cover a position of size liquidity between the two passed prices.
     public fun get_amount_x_delta(
         sqrt_ratio_0: u128,
         sqrt_ratio_1: u128,
@@ -130,6 +172,13 @@ module flowx_clmm::sqrt_price_math {
         (math_u256::div_round(numerator, denominator, round_up) as u64)
     }
 
+    /// Gets the amountY delta between two prices
+    /// @dev Calculates liquidity * (sqrt(upper) - sqrt(lower))
+    /// @param sqrt_ratio_0 A sqrt price.
+    /// @param sqrt_ratio_1 Another sqrt price.
+    /// @param liquidity  The amount of usable liquidity.
+    /// @param round_up Whether to round up the result.
+    /// @return Amount of tokenY required to cover a position of size liquidity between the two passed prices.
     public fun get_amount_y_delta(
         sqrt_ratio_0: u128,
         sqrt_ratio_1: u128,

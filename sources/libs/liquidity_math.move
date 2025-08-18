@@ -7,6 +7,10 @@ module flowx_clmm::liquidity_math {
     const E_OVERFLOW: u64 = 0;
     const E_UNDERFLOW: u64 = 1;
 
+    /// Add a signed liquidity delta to liquidity and revert if it overflows or underflows.
+    /// @param x The current liquidity.
+    /// @param y The signed liquidity delta to add.
+    /// @return The new liquidity.
     public fun add_delta(x: u128, y: I128): u128 {
         let abs_y = i128::abs_u128(y);
         if (i128::is_neg(y)) {
@@ -18,6 +22,12 @@ module flowx_clmm::liquidity_math {
         }
     }
 
+    /// Computes the amount of liquidity received for a given amount of tokenX and price range.
+    /// @dev Calculates amountX * (sqrt(upper) * sqrt(lower)) / (sqrt(upper) - sqrt(lower))
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param amount_x The amount of tokenX to use.
+    /// @return The amount of liquidity received.
     public fun get_liquidity_for_amount_x(
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
@@ -28,6 +38,12 @@ module flowx_clmm::liquidity_math {
         full_math_u128::mul_div_floor((amount_x as u128), intermediate, sqrt_ratio_b_sorted - sqrt_ratio_a_sorted)
     }
 
+    /// Computes the amount of liquidity received for a given amount of tokenY and price range.
+    /// @dev Calculates amountY / (sqrt(upper) - sqrt(lower)).
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param amount_y The amount of tokenY to use.
+    /// @return The amount of liquidity received.
     public fun get_liquidity_for_amount_y(
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
@@ -37,6 +53,14 @@ module flowx_clmm::liquidity_math {
         full_math_u128::mul_div_floor((amount_y as u128), (constants::get_q64() as u128), sqrt_ratio_b_sorted - sqrt_ratio_a_sorted)
     }
 
+    /// Computes the amount of liquidity received for a given amount of tokenX and tokenY and price range.
+    /// @dev Calculates min(liquidityX, liquidityY) where liquidityX is the liquidity received for amountX and liquidityY is the liquidity received for amountY.
+    /// @param sqrt_ratio_x The current sqrt price.
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param amount_x The amount of tokenX to use.
+    /// @param amount_y The amount of tokenY to use.
+    /// @return The amount of liquidity received.
     public fun get_liquidity_for_amounts(
         sqrt_ratio_x: u128,
         sqrt_ratio_a: u128,
@@ -57,6 +81,13 @@ module flowx_clmm::liquidity_math {
         liquidity
     }
 
+    /// Gets the amountX required to cover a position of size liquidity between two prices.
+    /// @dev Calculates liquidity * (sqrt(upper) - sqrt(lower)) / (sqrt(upper) * sqrt(lower))
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param liquidity The amount of usable liquidity.
+    /// @param add Whether to add or remove the amount of tokenX.
+    /// @return Amount of tokenX required to cover a position of size liquidity between the two passed prices.
     public fun get_amount_x_for_liquidity(
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
@@ -78,6 +109,13 @@ module flowx_clmm::liquidity_math {
         (math_u256::div_round(numerator, denominator, add) as u64)
     }
 
+    /// Gets the amountY required to cover a position of size liquidity between two prices.
+    /// @dev Calculates liquidity * (sqrt(upper) - sqrt(lower))
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param liquidity The amount of usable liquidity.
+    /// @param add Whether to add or remove the amount of tokenY.
+    /// @return Amount of tokenY required to cover a position of size liquidity between the two passed prices.
     public fun get_amount_y_for_liquidity(
         sqrt_ratio_a: u128,
         sqrt_ratio_b: u128,
@@ -96,6 +134,13 @@ module flowx_clmm::liquidity_math {
         )
     }
 
+    /// Gets the amounts of tokenX and tokenY required to cover a position of size liquidity between two prices.
+    /// @param sqrt_ratio_x The current sqrt price.
+    /// @param sqrt_ratio_a A sqrt price representing the first tick boundary.
+    /// @param sqrt_ratio_b A sqrt price representing the second tick boundary.
+    /// @param liquidity The amount of usable liquidity.
+    /// @param add Whether to add or remove the amounts of tokenX and tokenY.
+    /// @return The amounts of tokenX and tokenY required to cover a position of size
     public fun get_amounts_for_liquidity(
         sqrt_ratio_x: u128,
         sqrt_ratio_a: u128,
