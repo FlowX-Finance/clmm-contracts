@@ -247,6 +247,44 @@ module flowx_clmm::pool_manager {
         };
     }
 
+    /// Create a new liquidity pool for the given coin types and fee rate without checking permissions
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param versioned The versioned object to check package version
+    /// @param ctx The transaction context
+    public fun create_pool_v3<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        versioned: &Versioned,
+        ctx: &mut TxContext
+    ) {
+        versioned::check_version(versioned);
+        create_pool_permission_less<X, Y>(self, fee_rate, ctx);
+    }
+
+    /// Create and immediately initialize a new liquidity pool with an initial price
+    /// @param self The pool registry
+    /// @param fee_rate The fee rate for the new pool (must be enabled)
+    /// @param sqrt_price The initial square root price as a Q64.64 value
+    /// @param versioned The versioned object to check package version
+    /// @param clock The clock object for timing
+    /// @param ctx The transaction context
+    public fun create_and_initialize_pool_v3<X, Y>(
+        self: &mut PoolRegistry,
+        fee_rate: u64,
+        sqrt_price: u128,
+        versioned: &Versioned,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        create_pool_v3<X, Y>(self, fee_rate, versioned, ctx);
+        if (utils::is_ordered<X, Y>()) {
+            pool::initialize(borrow_mut_pool<X, Y>(self, fee_rate), sqrt_price, versioned, clock, ctx);
+        } else {
+            pool::initialize(borrow_mut_pool<Y, X>(self, fee_rate), sqrt_price, versioned, clock, ctx);
+        };
+    }
+
     /// Enable a new fee rate and tick spacing combination for pool creation
     /// @param admin_cap The admin capability required for this operation
     /// @param self The pool registry
@@ -605,6 +643,44 @@ module flowx_clmm::test_pool_manager {
 
         pool_manager::create_pool<SUI, SUI>(&mut pool_registry, 100, &versioned, &mut ctx);
 
+        versioned::destroy_for_testing(versioned);
+        pool_manager::destroy_for_testing(pool_registry);
+    }
+
+    #[test]
+    fun test_create_and_initialize_pool_v3() {
+        use sui::clock;
+        //succeeds if fee amount is enabled
+        let ctx = tx_context::dummy();
+        let clock = clock::create_for_testing(&mut ctx);
+        let versioned = versioned::create_for_testing(&mut ctx);
+        let pool_registry = pool_manager::create_for_testing(&mut ctx);
+        pool_manager::enable_fee_rate_for_testing(&mut pool_registry, 100, 2);
+
+        pool_manager::create_and_initialize_pool_v3<SUI, USDC>(
+            &mut pool_registry,
+            100,
+            1844674407370955161,
+            &versioned,
+            &clock,
+            &mut ctx,
+        );
+
+        assert!(
+            pool::coin_type_x(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == std::type_name::get<SUI>() &&
+            pool::coin_type_y(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == std::type_name::get<USDC>() &&
+            pool::sqrt_price_current(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 1844674407370955161 &&
+            i32::eq(pool::tick_index_current(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)), i32::neg_from(46055)) &&
+            pool::observation_index(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 0 &&
+            pool::observation_cardinality(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 1 &&
+            pool::observation_cardinality_next(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 1 &&
+            pool::tick_spacing(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 2 &&
+            pool::swap_fee_rate(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)) == 100 &&
+            !pool::is_locked(pool_manager::borrow_pool<SUI, USDC>(&pool_registry, 100)),
+            0,
+        );
+
+        clock::destroy_for_testing(clock);
         versioned::destroy_for_testing(versioned);
         pool_manager::destroy_for_testing(pool_registry);
     }
