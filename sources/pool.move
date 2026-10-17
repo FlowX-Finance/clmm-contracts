@@ -473,7 +473,7 @@ module flowx_clmm::pool {
 
         let reward_growths_global = update_reward_infos(self, timestamp_s);
 
-        let protocol_fee_rate = if (exact_in) {
+        let protocol_fee_rate = if (x_for_y) {
             self.protocol_fee_rate % 16
         } else {
             self.protocol_fee_rate >> 4
